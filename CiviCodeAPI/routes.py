@@ -11,7 +11,7 @@ router = APIRouter()
 # Get all addresses with optional pagination
 @router.get("/addresses/", response_model=List[AddressResponse])
 def get_addresses(skip: int = 0, limit: int = 10, db: Session = Depends(get_db)):
-    addresses = db.query(Address).offset(skip).limit(limit).all()
+    addresses = db.query(Address).order_by(Address.id).offset(skip).limit(limit).all()
     return addresses
 
 # Get a single address by ID

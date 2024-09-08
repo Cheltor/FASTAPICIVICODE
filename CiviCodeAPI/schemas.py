@@ -31,6 +31,8 @@ class AddressCreate(BaseModel):
     vacancy_status: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
 # Pydantic schema for reading an address (includes id and timestamps)
 class AddressResponse(AddressCreate):
