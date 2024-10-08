@@ -2,7 +2,7 @@ from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
 
-# Pydantic schema for creating an address
+# Pydantic schema for address
 class AddressCreate(BaseModel):
     pid: Optional[str] = None
     ownername: Optional[str] = None
@@ -34,15 +34,15 @@ class AddressCreate(BaseModel):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
-# Pydantic schema for reading an address (includes id and timestamps)
 class AddressResponse(AddressCreate):
     id: int
     created_at: datetime
     updated_at: datetime
 
     class Config:
-        form_attributes = True
+        from_attributes = True
 
+# Pydantic schema for User
 class UserBase(BaseModel):
     email: str
     name: Optional[str] = None
@@ -58,4 +58,89 @@ class UserResponse(UserBase):
     updated_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
+
+# Pydantic schema for Business
+class BusinessBase(BaseModel):
+    name: Optional[str] = None
+    address_id: int
+    unit_id: Optional[int] = None
+    website: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    trading_as: Optional[str] = None
+
+class BusinessCreate(BusinessBase):
+    pass
+
+class BusinessResponse(BusinessBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# Pydantic schema for Contact
+class ContactBase(BaseModel):
+    name: str
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    notes: Optional[str] = ""
+    hidden: Optional[bool] = False
+
+class ContactCreate(ContactBase):
+    pass
+
+class ContactResponse(ContactBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# Pydantic schema for Violations
+class ViolationBase(BaseModel):
+    description: Optional[str] = None
+    status: Optional[int] = None
+    address_id: int
+    user_id: int
+    deadline: Optional[str] = None
+    violation_type: Optional[str] = None
+    extend: Optional[int] = 0
+    unit_id: Optional[int] = None
+    inspection_id: Optional[int] = None
+    business_id: Optional[int] = None
+    comment: Optional[str] = None
+
+class ViolationCreate(ViolationBase):
+    pass
+
+class ViolationResponse(ViolationBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# Pydantic schema for Comments
+class CommentBase(BaseModel):
+    content: str
+    address_id: int
+    user_id: int
+    unit_id: Optional[int]  # Unit ID is optional
+
+# Schema for creating a new comment (doesn't include id, created_at, updated_at)
+class CommentCreate(CommentBase):
+    pass  # Inherit all fields from CommentBase for creation
+
+# Schema for returning comment data in API responses
+class CommentResponse(CommentBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True  # This allows returning ORM models as dicts

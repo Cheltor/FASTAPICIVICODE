@@ -8,11 +8,11 @@ from database import get_db  # Assuming a get_db function is set up to provide t
 # Create a router instance
 router = APIRouter()
 
-# Get all addresses with optional pagination
+# Get all addresses
 @router.get("/addresses/", response_model=List[AddressResponse])
-def get_addresses(skip: int = 0, limit: int = 10, db: Session = Depends(get_db)):
-    addresses = db.query(Address).order_by(Address.id).offset(skip).limit(limit).all()
-    return addresses
+def get_addresses(skip: int = 0, db: Session = Depends(get_db)):
+  addresses = db.query(Address).order_by(Address.id).offset(skip).all()
+  return addresses
 
 # Get a single address by ID
 @router.get("/addresses/{address_id}", response_model=AddressResponse)

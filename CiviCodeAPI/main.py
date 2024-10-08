@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
-from routes import addresses_router, users_router
+from fastapi.middleware.cors import CORSMiddleware
+from routes import addresses_router, users_router, businesses_router, contacts_router, violations_router, comments_router
 from database import engine, Base
 import uvicorn
 
@@ -23,6 +24,27 @@ app.include_router(addresses_router)
 
 # Include the user routes from routes.py
 app.include_router(users_router)
+
+# Include the business routes from routes.py
+app.include_router(businesses_router)
+
+# Include the contact routes from routes.py
+app.include_router(contacts_router)
+
+# Include the violation routes from routes.py
+app.include_router(violations_router)
+
+# Include the comment routes from routes.py
+app.include_router(comments_router)
+
+# CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Root endpoint for testing
 @app.get("/")
