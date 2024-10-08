@@ -430,6 +430,7 @@ class Violation(Base):
     description = Column(String)
     status = Column(Integer)
     address_id = Column(BigInteger, ForeignKey('addresses.id'), nullable=False)
+    citations = relationship("Citation", backref="violation", cascade="all, delete-orphan")
     user_id = Column(BigInteger, ForeignKey('users.id'), nullable=False)
     deadline = Column(String)
     violation_type = Column(String)

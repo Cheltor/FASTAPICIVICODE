@@ -144,3 +144,30 @@ class CommentResponse(CommentBase):
 
     class Config:
         from_attributes = True  # This allows returning ORM models as dicts
+
+# Pydantic schema for Citations
+class CitationBase(BaseModel):
+    description: Optional[str] = None
+    status: Optional[int] = None
+    address_id: int
+    user_id: int
+    deadline: Optional[str] = None
+    citation_type: Optional[str] = None
+    extend: Optional[int] = 0
+    unit_id: Optional[int] = None
+    inspection_id: Optional[int] = None
+    business_id: Optional[int] = None
+    comment: Optional[str] = None
+
+class CitationCreate(CitationBase):
+    pass
+
+class CitationResponse(BaseModel):
+    id: int
+    violation_id: int  # Link to the violation
+    deadline: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        orm_mode = True

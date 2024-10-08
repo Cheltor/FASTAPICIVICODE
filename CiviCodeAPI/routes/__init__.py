@@ -4,6 +4,7 @@ from .businesses import router as businesses_router
 from .contacts import router as contacts_router
 from .violations import router as violations_router
 from .comments import router as comments_router
+from .citations import router as citations_router
 # Import other route modules as needed
 
 # You can list all the routers here
@@ -14,5 +15,6 @@ __all__ = [
     "contacts_router",
     "violations_router",
     "comments_router",
+    "citations_router"
     # Add other routers here
 ]
