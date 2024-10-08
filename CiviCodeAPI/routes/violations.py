@@ -9,8 +9,8 @@ router = APIRouter()
 
 # Get all violations
 @router.get("/violations/", response_model=List[ViolationResponse])
-def get_violations(skip: int = 0, limit: int = 10, db: Session = Depends(get_db)):
-    violations = db.query(Violation).offset(skip).limit(limit).all()
+def get_violations(skip: int = 0, db: Session = Depends(get_db)):
+    violations = db.query(Violation).offset(skip).all()
     return violations
 
 # Create a new violation
@@ -35,4 +35,3 @@ def get_violation(violation_id: int, db: Session = Depends(get_db)):
 def get_violations_by_address(address_id: int, db: Session = Depends(get_db)):
     violations = db.query(Violation).filter(Violation.address_id == address_id).all()
     return violations
-    

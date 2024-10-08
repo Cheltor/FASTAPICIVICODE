@@ -9,8 +9,8 @@ router = APIRouter()
 
 # Get all contacts
 @router.get("/contacts/", response_model=List[ContactResponse])
-def get_contacts(skip: int = 0, limit: int = 10, db: Session = Depends(get_db)):
-    contacts = db.query(Contact).offset(skip).limit(limit).all()
+def get_contacts(skip: int = 0, db: Session = Depends(get_db)):
+    contacts = db.query(Contact).offset(skip).all()
     return contacts
 
 # Create a new contact
@@ -21,3 +21,11 @@ def create_contact(contact: ContactCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(new_contact)
     return new_contact
+
+# Get a specific contact by ID
+@router.get("/contacts/{contact_id}", response_model=ContactResponse)
+def get_contact(contact_id: int, db: Session = Depends(get_db)):
+    contact = db.query(Contact).filter(Contact.id == contact_id).first()
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    return contact

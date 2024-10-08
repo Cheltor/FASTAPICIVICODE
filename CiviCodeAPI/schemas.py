@@ -170,4 +170,85 @@ class CitationResponse(BaseModel):
     updated_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
+
+# Pydantic schema for Inspections
+class InspectionBase(BaseModel):
+    address_id: int
+    user_id: int
+    status: Optional[int] = None
+    inspection_type: Optional[str] = None
+    unit_id: Optional[int] = None
+    business_id: Optional[int] = None
+    comment: Optional[str] = None
+
+class InspectionCreate(InspectionBase):
+    pass
+
+class InspectionResponse(BaseModel):
+    id: int
+    address_id: int
+    inspector_id: Optional[int] = None
+    status: Optional[str] = None
+    inspection_type: Optional[str] = None
+    unit_id: Optional[int] = None
+    business_id: Optional[int] = None
+    comment: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# Pydantic schema for Codes
+class CodeBase(BaseModel):
+    chapter: str
+    section: str
+    name: str
+    description: str
+
+class CodeCreate(CodeBase):
+    pass
+
+class CodeResponse(CodeBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# Licenses
+class LicenseBase(BaseModel):
+    inspection_id: int
+    sent: Optional[bool] = False
+    paid: int
+    license_type: int
+
+class LicenseCreate(LicenseBase):
+    pass
+
+class LicenseResponse(LicenseBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# Pydantic schema for ContactComments
+class ContactCommentBase(BaseModel):
+    contact_id: int
+    comment: str
+    user_id: int
+
+class ContactCommentCreate(ContactCommentBase):
+    pass
+
+class ContactCommentResponse(ContactCommentBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
