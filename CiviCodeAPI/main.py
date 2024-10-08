@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
-from routes import router as address_router
+from routes import addresses_router, users_router
 from database import engine, Base
 import uvicorn
 
@@ -19,7 +19,10 @@ app = FastAPI(lifespan=lifespan)
 Base.metadata.create_all(bind=engine)
 
 # Include the address routes from routes.py
-app.include_router(address_router)
+app.include_router(addresses_router)
+
+# Include the user routes from routes.py
+app.include_router(users_router)
 
 # Root endpoint for testing
 @app.get("/")

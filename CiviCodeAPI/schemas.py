@@ -42,3 +42,20 @@ class AddressResponse(AddressCreate):
 
     class Config:
         form_attributes = True
+
+class UserBase(BaseModel):
+    email: str
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    role: Optional[int] = 0
+
+class UserCreate(UserBase):
+    password: str
+
+class UserResponse(UserBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        orm_mode = True
