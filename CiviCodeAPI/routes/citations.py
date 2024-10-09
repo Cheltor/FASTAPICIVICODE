@@ -9,8 +9,8 @@ router = APIRouter()
 
 # Get all citations
 @router.get("/citations/", response_model=List[CitationResponse])
-def get_citations(skip: int = 0, limit: int = 10, db: Session = Depends(get_db)):
-    citations = db.query(Citation).offset(skip).limit(limit).all()
+def get_citations(skip: int = 0, db: Session = Depends(get_db)):
+    citations = db.query(Citation).order_by(Citation.created_at.desc()).offset(skip).all()
     return citations
 
 # Create a new citation

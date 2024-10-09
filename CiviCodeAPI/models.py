@@ -72,6 +72,9 @@ class Address(Base):
     created_at = Column(DateTime, nullable=False, server_default=func.now())
     updated_at = Column(DateTime, nullable=False, onupdate=func.now(), server_default=func.now())
 
+    # Relationships
+    inspections = relationship("Inspection", back_populates="address")  # Define relationship to Inspections
+
 # AddressContacts
 class AddressContact(Base):
     __tablename__ = "address_contacts"
@@ -300,6 +303,10 @@ class Inspection(Base):
     start_time = Column(DateTime)
     paid = Column(Boolean, default=False, nullable=False)
 
+    # Relationships
+    address = relationship("Address", back_populates="inspections")
+    inspector = relationship("User", back_populates="inspections")
+
 # Licenses
 class License(Base):
     __tablename__ = "licenses"
@@ -388,6 +395,9 @@ class User(Base):
     role = Column(Integer, default=0)
     created_at = Column(DateTime, nullable=False)
     updated_at = Column(DateTime, nullable=False)
+
+    # Relationships
+    inspections = relationship("Inspection", back_populates="inspector")  # Define relationship to Inspections
 
 # Versions
 class Version(Base):

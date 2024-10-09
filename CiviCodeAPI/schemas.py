@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, date
 
 # Pydantic schema for address
 class AddressCreate(BaseModel):
@@ -36,6 +36,8 @@ class AddressCreate(BaseModel):
 
 class AddressResponse(AddressCreate):
     id: int
+    combadd: Optional[str] = None
+    ownername: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
@@ -54,6 +56,7 @@ class UserCreate(UserBase):
 
 class UserResponse(UserBase):
     id: int
+    email: str
     created_at: datetime
     updated_at: datetime
 
@@ -147,17 +150,15 @@ class CommentResponse(CommentBase):
 
 # Pydantic schema for Citations
 class CitationBase(BaseModel):
-    description: Optional[str] = None
-    status: Optional[int] = None
-    address_id: int
+    fine: Optional[float] = None
+    deadline: Optional[date] = None
+    violation_id: int
     user_id: int
-    deadline: Optional[str] = None
-    citation_type: Optional[str] = None
-    extend: Optional[int] = 0
+    status: Optional[int] = None
+    trial_date: Optional[date] = None
+    code_id: Optional[int] = None
+    citationid: Optional[str] = None
     unit_id: Optional[int] = None
-    inspection_id: Optional[int] = None
-    business_id: Optional[int] = None
-    comment: Optional[str] = None
 
 class CitationCreate(CitationBase):
     pass
@@ -165,7 +166,8 @@ class CitationCreate(CitationBase):
 class CitationResponse(BaseModel):
     id: int
     violation_id: int  # Link to the violation
-    deadline: Optional[str] = None
+    deadline: Optional[date] = None
+    citationid: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
@@ -188,8 +190,12 @@ class InspectionCreate(InspectionBase):
 class InspectionResponse(BaseModel):
     id: int
     address_id: int
+    address: Optional[AddressResponse] = None
     inspector_id: Optional[int] = None
+    inspector: Optional[UserResponse] = None
     status: Optional[str] = None
+    source: Optional[str] = None
+    scheduled_datetime: Optional[datetime] = None
     inspection_type: Optional[str] = None
     unit_id: Optional[int] = None
     business_id: Optional[int] = None
