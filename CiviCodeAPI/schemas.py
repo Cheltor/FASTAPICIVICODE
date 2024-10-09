@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime, date
 
 # Pydantic schema for address
@@ -124,6 +124,7 @@ class ViolationResponse(ViolationBase):
     id: int
     created_at: datetime
     updated_at: datetime
+    combadd: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -167,9 +168,15 @@ class CitationResponse(BaseModel):
     id: int
     violation_id: int  # Link to the violation
     deadline: Optional[date] = None
+    fine: Optional[float] = None
     citationid: Optional[str] = None
+    status: Optional[int] = None
+    trial_date: Optional[date] = None
+    code_id: Optional[int] = None
+    code_name: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+    combadd: Optional[str] = None  # Add combadd attribute
 
     class Config:
         from_attributes = True
@@ -218,6 +225,9 @@ class CodeCreate(CodeBase):
 
 class CodeResponse(CodeBase):
     id: int
+    name: str
+    chapter: str
+    section: str
     created_at: datetime
     updated_at: datetime
 

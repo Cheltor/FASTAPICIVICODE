@@ -45,6 +45,25 @@ def get_inspections_by_address(address_id: int, db: Session = Depends(get_db)):
         joinedload(Inspection.address),  # Eagerly load address relationship
         joinedload(Inspection.inspector)  # Eagerly load inspector relationship (User)
       )
+      .filter(
+      Inspection.address_id == address_id,
+      Inspection.source != 'Complaint')
       .all()
     )
     return inspections
+
+# Get all complaints for a specific Address
+@router.get("/complaints/address/{address_id}", response_model=List[InspectionResponse])
+def get_complaints_by_address(address_id: int, db: Session = Depends(get_db)):
+    complaints = (
+      db.query(Inspection)
+      .options(
+        joinedload(Inspection.address),  # Eagerly load address relationship
+        joinedload(Inspection.inspector)  # Eagerly load inspector relationship (User)
+      )
+      .filter(
+      Inspection.address_id == address_id,
+      Inspection.source == 'Complaint')
+      .all()
+    )
+    return complaints

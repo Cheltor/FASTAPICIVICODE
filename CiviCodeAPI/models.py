@@ -73,7 +73,9 @@ class Address(Base):
     updated_at = Column(DateTime, nullable=False, onupdate=func.now(), server_default=func.now())
 
     # Relationships
-    inspections = relationship("Inspection", back_populates="address")  # Define relationship to Inspections
+    inspections = relationship("Inspection", back_populates="address")  # Address has many Inspections
+    comments = relationship("Comment", back_populates="address", cascade="all, delete-orphan") # Address has many Comments
+    violations = relationship("Violation", back_populates="address", cascade="all, delete-orphan") # Address has many Violations
 
 # AddressContacts
 class AddressContact(Base):
@@ -151,6 +153,11 @@ class Citation(Base):
     citationid = Column(String)
     unit_id = Column(BigInteger, ForeignKey('units.id'))
 
+    # Relationships
+    violation = relationship("Violation", back_populates="citations") # Citation belongs to a Violation
+    # citation has one code 
+    code = relationship("Code", back_populates="citations")
+
 # CitationsCodes (join table for Many-to-Many relationships)
 class CitationCode(Base):
     __tablename__ = "citations_codes"
@@ -182,6 +189,9 @@ class Code(Base):
     created_at = Column(DateTime, nullable=False)
     updated_at = Column(DateTime, nullable=False)
 
+    # Relationships
+    citations = relationship("Citation", back_populates="code") # citations have one code
+
 # Comments
 class Comment(Base):
     __tablename__ = "comments"
@@ -193,6 +203,9 @@ class Comment(Base):
     unit_id = Column(BigInteger, ForeignKey('units.id'))
     created_at = Column(DateTime, nullable=False)
     updated_at = Column(DateTime, nullable=False)
+
+    # Relationships
+    address = relationship("Address", back_populates="comments")
 
 # Concerns
 class Concern(Base):
@@ -451,3 +464,8 @@ class Violation(Base):
     business_id = Column(BigInteger)
     created_at = Column(DateTime, nullable=False)
     updated_at = Column(DateTime, nullable=False)
+
+    # Relationships
+    address = relationship("Address", back_populates="violations") # Violation belongs to an Address
+    citations = relationship("Citation", back_populates="violation") # Violation has many Citations
+
