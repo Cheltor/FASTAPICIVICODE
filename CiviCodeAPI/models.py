@@ -1,6 +1,8 @@
 from sqlalchemy import Column, Integer, String, Boolean, Float, DateTime, ForeignKey, Text, BigInteger, Date, func
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
+from datetime import datetime, timedelta
+from constants import DEADLINE_OPTIONS, DEADLINE_VALUES
 
 Base = declarative_base()
 
@@ -186,8 +188,8 @@ class Code(Base):
     section = Column(String)
     name = Column(String)
     description = Column(String)
-    created_at = Column(DateTime, nullable=False)
-    updated_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
 
     # Relationships
     citations = relationship("Citation", back_populates="code") # citations have one code
@@ -200,9 +202,9 @@ class Comment(Base):
     content = Column(Text, nullable=False)
     address_id = Column(BigInteger, ForeignKey('addresses.id'), nullable=False)
     user_id = Column(BigInteger, ForeignKey('users.id'), nullable=False)
-    unit_id = Column(BigInteger, ForeignKey('units.id'))
-    created_at = Column(DateTime, nullable=False)
-    updated_at = Column(DateTime, nullable=False)
+    unit_id = Column(BigInteger, ForeignKey('units.id'), nullable=True)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
 
     # Relationships
     address = relationship("Address", back_populates="comments")
@@ -469,3 +471,20 @@ class Violation(Base):
     address = relationship("Address", back_populates="violations") # Violation belongs to an Address
     citations = relationship("Citation", back_populates="violation") # Violation has many Citations
 
+    def deadline_passed(self) -> bool:
+        """Determine if the deadline has passed."""
+        deadline_index = DEADLINE_OPTIONS.index(self.deadline) if self.deadline in DEADLINE_OPTIONS else None
+        if deadline_index is None:
+            return False
+        deadline_days = DEADLINE_VALUES[deadline_index]
+        deadline_date = self.created_at + timedelta(days=deadline_days) + timedelta(days=self.extend)
+        return deadline_date < datetime.utcnow()
+
+    @property
+    def deadline_date(self) -> datetime:
+        """Calculate the actual deadline date."""
+        deadline_index = DEADLINE_OPTIONS.index(self.deadline) if self.deadline in DEADLINE_OPTIONS else None
+        if deadline_index is None:
+            raise ValueError("Invalid deadline value")
+        deadline_days = DEADLINE_VALUES[deadline_index]
+        return self.created_at + timedelta(days=deadline_days) + timedelta(days=self.extend)

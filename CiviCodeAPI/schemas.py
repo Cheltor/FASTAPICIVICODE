@@ -1,6 +1,7 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, validator
 from typing import Optional, List
 from datetime import datetime, date
+from constants import DEADLINE_OPTIONS, DEADLINE_VALUES
 
 # Pydantic schema for address
 class AddressCreate(BaseModel):
@@ -117,6 +118,12 @@ class ViolationBase(BaseModel):
     business_id: Optional[int] = None
     comment: Optional[str] = None
 
+    @validator('deadline')
+    def validate_deadline(cls, value):
+        if value not in DEADLINE_OPTIONS:
+            raise ValueError(f"Invalid deadline value: {value}")
+        return value
+
 class ViolationCreate(ViolationBase):
     pass
 
@@ -125,6 +132,8 @@ class ViolationResponse(ViolationBase):
     created_at: datetime
     updated_at: datetime
     combadd: Optional[str] = None
+    deadline_date: Optional[datetime]  # Include the deadline date in the response
+
 
     class Config:
         from_attributes = True
@@ -132,9 +141,8 @@ class ViolationResponse(ViolationBase):
 # Pydantic schema for Comments
 class CommentBase(BaseModel):
     content: str
-    address_id: int
     user_id: int
-    unit_id: Optional[int]  # Unit ID is optional
+    unit_id: Optional[int] = None  # Unit ID is optional
 
 # Schema for creating a new comment (doesn't include id, created_at, updated_at)
 class CommentCreate(CommentBase):

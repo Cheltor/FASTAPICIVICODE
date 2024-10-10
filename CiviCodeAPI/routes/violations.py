@@ -18,12 +18,15 @@ def get_violations(skip: int = 0, db: Session = Depends(get_db)):
         .offset(skip)
         .all()
     )
+
+    
     
     # Add combadd to the response
     response = []
     for violation in violations:
         violation_dict = violation.__dict__
         violation_dict['combadd'] = violation.address.combadd if violation.address else None
+        violation_dict['deadline_date'] = violation.deadline_date  # Directly access the computed property
         response.append(violation_dict)
     
     return response

@@ -29,3 +29,5 @@ def get_contact(contact_id: int, db: Session = Depends(get_db)):
     if not contact:
         raise HTTPException(status_code=404, detail="Contact not found")
     return contact
+
+

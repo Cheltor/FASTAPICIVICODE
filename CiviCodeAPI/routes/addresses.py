@@ -61,18 +61,18 @@ def get_address_comments(address_id: int, db: Session = Depends(get_db)):
 
 # Add a comment to the address
 @router.post("/addresses/{address_id}/comments", response_model=CommentResponse)
-def add_address_comment(address_id: int, comment: CommentResponse, db: Session = Depends(get_db)):
-    # Check if the address exists
-    address = db.query(Address).filter(Address.id == address_id).first()
-    if not address:
-        raise HTTPException(status_code=404, detail="Address not found")
-    
-    # Create a new comment
-    new_comment = Comment(**comment.dict(), address_id=address_id)
+def create_comment_for_address(address_id: int, comment: CommentCreate, db: Session = Depends(get_db)):
+    # Create and save the comment
+    new_comment = Comment(address_id=address_id, **comment.dict())
     db.add(new_comment)
     db.commit()
     db.refresh(new_comment)
     return new_comment
+
+
+
+
+
 
 # Update a comment for the address
 @router.put("/addresses/{address_id}/comments/{comment_id}", response_model=CommentResponse)
