@@ -11,7 +11,7 @@ import jwt
 
 SECRET_KEY = "trpdds2020"  
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+ACCESS_TOKEN_EXPIRE_MINUTES = 480
 
 def create_access_token(data: dict, expires_delta: Union[timedelta, None] = None):
     to_encode = data.copy()
@@ -51,3 +51,15 @@ async def login(
     )
 
     return {"access_token": token, "token_type": "bearer"}
+
+@router.get("/user", response_model=UserResponse)
+async def read_users_me(
+    token: str = Depends(OAuth2PasswordBearer(tokenUrl="/login")),
+    db: Session = Depends(get_db)
+):
+    payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    user_id = int(payload.get("sub"))
+    user = db.query(User).filter(User.id == user_id).first()
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
