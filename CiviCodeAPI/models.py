@@ -208,6 +208,7 @@ class Comment(Base):
 
     # Relationships
     address = relationship("Address", back_populates="comments")
+    user = relationship("User", back_populates="comments")
 
 # Concerns
 class Concern(Base):
@@ -413,6 +414,7 @@ class User(Base):
 
     # Relationships
     inspections = relationship("Inspection", back_populates="inspector")  # Define relationship to Inspections
+    comments = relationship("Comment", back_populates="user")  # Define relationship to Comments
 
 # Versions
 class Version(Base):

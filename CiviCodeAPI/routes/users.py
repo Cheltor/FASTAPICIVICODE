@@ -31,6 +31,7 @@ def get_users(skip: int = 0, db: Session = Depends(get_db)):
     users = db.query(User).offset(skip).all()
     return users
 
+# login
 @router.post("/login")
 async def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
@@ -52,6 +53,7 @@ async def login(
 
     return {"access_token": token, "token_type": "bearer"}
 
+# Get the current user
 @router.get("/user", response_model=UserResponse)
 async def read_users_me(
     token: str = Depends(OAuth2PasswordBearer(tokenUrl="/login")),
