@@ -239,12 +239,11 @@ class ContactComment(Base):
     __tablename__ = "contact_comments"
     
     id = Column(BigInteger, primary_key=True, index=True)
-    comment = Column(Text)
+    comment = Column(Text, nullable=False)
     user_id = Column(BigInteger, ForeignKey('users.id'), nullable=False)
     contact_id = Column(BigInteger, ForeignKey('contacts.id'), nullable=False)
-    created_at = Column(DateTime, nullable=False)
-    updated_at = Column(DateTime, nullable=False)
-
+    created_at = Column(DateTime, default=func.now(), nullable=False)  # Auto-generate created_at timestamp
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)  # Auto-update updated_at timestamp
 
 # Units
 class Unit(Base):

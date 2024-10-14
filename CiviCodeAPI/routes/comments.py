@@ -62,32 +62,40 @@ def get_comments_by_contact(contact_id: int, db: Session = Depends(get_db)):
     return comments
 
 # Fetch Comment photo by ID
-@router.get("/comments/address/{address_id}", response_model=List[CommentResponse])
-def get_comments_for_address(address_id: int, db: Session = Depends(get_db)):
-    comments = (
-        db.query(Comment)
-        .filter(Comment.address_id == address_id)
-        .all()
-    )
+@router.get("/comments/{comment_id}/photos")
+def get_comment_photos(comment_id: int, db: Session = Depends(get_db)):
+    # Retrieve the attachments for the comment
+    attachments = db.query(ActiveStorageAttachment).filter_by(record_id=comment_id, record_type='Comment', name='photos').all()
     
-    # For each comment, fetch associated photos from ActiveStorage
-    for comment in comments:
-        # Fetch attachments for this comment
-        attachments = (
-            db.query(ActiveStorageAttachment, ActiveStorageBlob)
-            .join(ActiveStorageBlob, ActiveStorageAttachment.blob_id == ActiveStorageBlob.id)
-            .filter(
-                ActiveStorageAttachment.record_type == 'Comment',
-                ActiveStorageAttachment.record_id == comment.id,
-                ActiveStorageAttachment.name == 'photos'  # 'photos' is the name of the attachment
-            )
-            .all()
-        )
+    if not attachments:
+        raise HTTPException(status_code=404, detail="Photos not found for this comment")
+
+    photos = []
+    
+    for attachment in attachments:
+        # Retrieve the associated blob for each attachment
+        blob = db.query(ActiveStorageBlob).filter_by(id=attachment.blob_id).first()
         
-        # Store photo URLs in a list associated with the comment
-        comment.photos = [
-            f"https://codeenforcement.blob.core.windows.net/ce-container/{attachment[1].key}"
-            for attachment in attachments
-        ]
+        if not blob:
+            continue  # Skip if no blob found (edge case)
+        
+        # Construct the Azure storage URL for each photo
+        photo_url = f"https://codeenforcement.blob.core.windows.net/ce-container/{blob.key}"
+        
+        # Append the photo details to the list
+        photos.append({
+            "filename": blob.filename,
+            "content_type": blob.content_type,
+            "url": photo_url,
+        })
     
-    return comments
+    return photos
+
+# Create a new comment for a Contact
+@router.post("/comments/{contact_id}/contact/", response_model=ContactCommentResponse)
+def create_contact_comment(contact_id: int, comment: ContactCommentCreate, db: Session = Depends(get_db)):
+    new_comment = ContactComment(**comment.dict())
+    db.add(new_comment)
+    db.commit()
+    db.refresh(new_comment)
+    return new_comment
