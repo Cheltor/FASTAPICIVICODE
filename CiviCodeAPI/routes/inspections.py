@@ -117,7 +117,10 @@ def create_area_for_unit(inspection_id: int, unit_id: int, area: AreaCreate, db:
         raise HTTPException(status_code=404, detail="Inspection not found")
 
     # Create a new area and associate it with the inspection and unit
-    new_area = Area(**area.dict(), inspection_id=inspection_id, unit_id=unit_id)
+    area_data = area.dict(exclude_unset=True)
+    area_data['inspection_id'] = inspection_id
+    area_data['unit_id'] = unit_id
+    new_area = Area(**area_data)
     db.add(new_area)
     db.commit()
     db.refresh(new_area)
@@ -221,4 +224,35 @@ def delete_prompt(prompt_id: int, db: Session = Depends(get_db)):
     db.delete(prompt)
     db.commit()
     return {"message": "Prompt deleted successfully"}
+
+# Get specific Area
+@router.get("/areas/{area_id}", response_model=AreaResponse)
+def get_area(area_id: int, db: Session = Depends(get_db)):
+    area = db.query(Area).filter(Area.id == area_id).first()
+    if not area:
+        raise HTTPException(status_code=404, detail="Area not found")
+    return area
+
+# Edit an area
+@router.put("/areas/{area_id}", response_model=AreaResponse)
+def update_area(area_id: int, area: AreaCreate, db: Session = Depends(get_db)):
+    area_to_update = db.query(Area).filter(Area.id == area_id).first()
+    if not area_to_update:
+        raise HTTPException(status_code=404, detail="Area not found")
+    area_data = area.dict()
+    for key, value in area_data.items():
+        setattr(area_to_update, key, value)
+    db.commit()
+    db.refresh(area_to_update)
+    return area_to_update
+
+# Delete an area
+@router.delete("/areas/{area_id}")
+def delete_area(area_id: int, db: Session = Depends(get_db)):
+    area = db.query(Area).filter(Area.id == area_id).first()
+    if not area:
+        raise HTTPException(status_code=404, detail="Area not found")
+    db.delete(area)
+    db.commit()
+    return {"message": "Area deleted successfully"}
 
