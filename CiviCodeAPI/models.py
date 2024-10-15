@@ -86,8 +86,9 @@ class AddressContact(Base):
     id = Column(BigInteger, primary_key=True, index=True)
     address_id = Column(BigInteger, ForeignKey('addresses.id'))
     contact_id = Column(BigInteger, ForeignKey('contacts.id'))
-    created_at = Column(DateTime, nullable=False)
-    updated_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)  # Auto-generate created_at timestamp
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)  # Auto-update updated_at timestamp
+
 
 # Areas
 class Area(Base):
@@ -100,8 +101,12 @@ class Area(Base):
     inspection_id = Column(BigInteger, ForeignKey('inspections.id'), nullable=False)
     floor = Column(Integer)
     unit_id = Column(BigInteger, ForeignKey('units.id'))
-    created_at = Column(DateTime, nullable=False)
-    updated_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+
+    # Relationships
+    inspection = relationship("Inspection", back_populates="areas")  # Define relationship to Inspections
+    unit = relationship("Unit", back_populates="areas")  # Define relationship to Units
 
 # AreaCodes
 class AreaCode(Base):
@@ -110,8 +115,9 @@ class AreaCode(Base):
     id = Column(BigInteger, primary_key=True, index=True)
     area_id = Column(BigInteger, ForeignKey('areas.id'), nullable=False)
     code_id = Column(BigInteger, ForeignKey('codes.id'), nullable=False)
-    created_at = Column(DateTime, nullable=False)
-    updated_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)  # Auto-generate created_at timestamp
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)  # Auto-update updated_at timestamp
+
 
 # Businesses
 class Business(Base):
@@ -125,8 +131,9 @@ class Business(Base):
     email = Column(String)
     phone = Column(String)
     trading_as = Column(String)
-    created_at = Column(DateTime, nullable=False)
-    updated_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)  # Auto-generate created_at timestamp
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)  # Auto-update updated_at timestamp
+
 
 # BusinessContacts
 class BusinessContact(Base):
@@ -135,8 +142,9 @@ class BusinessContact(Base):
     id = Column(BigInteger, primary_key=True, index=True)
     business_id = Column(BigInteger, ForeignKey('businesses.id'), nullable=False)
     contact_id = Column(BigInteger, ForeignKey('contacts.id'), nullable=False)
-    created_at = Column(DateTime, nullable=False)
-    updated_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)  # Auto-generate created_at timestamp
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)  # Auto-update updated_at timestamp
+
 
 # Citations
 class Citation(Base):
@@ -146,8 +154,9 @@ class Citation(Base):
     fine = Column(Integer)
     deadline = Column(Date)
     violation_id = Column(BigInteger, ForeignKey('violations.id'), nullable=False)
-    created_at = Column(DateTime, nullable=False)
-    updated_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)  # Auto-generate created_at timestamp
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)  # Auto-update updated_at timestamp
+
     user_id = Column(BigInteger, ForeignKey('users.id'), nullable=False)
     status = Column(Integer)
     trial_date = Column(Date)
@@ -176,8 +185,9 @@ class CitationComment(Base):
     user_id = Column(BigInteger, ForeignKey('users.id'), nullable=False)
     citation_id = Column(BigInteger, ForeignKey('citations.id'), nullable=False)
     content = Column(Text)
-    created_at = Column(DateTime, nullable=False)
-    updated_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)  # Auto-generate created_at timestamp
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)  # Auto-update updated_at timestamp
+
 
 # Codes
 class Code(Base):
@@ -218,8 +228,9 @@ class Concern(Base):
     address_id = Column(BigInteger, ForeignKey('addresses.id'), nullable=False)
     content = Column(Text)
     emailorphone = Column(String)
-    created_at = Column(DateTime, nullable=False)
-    updated_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)  # Auto-generate created_at timestamp
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)  # Auto-update updated_at timestamp
+
 
 # Contacts
 class Contact(Base):
@@ -231,8 +242,12 @@ class Contact(Base):
     phone = Column(String)
     notes = Column(Text, default="")
     hidden = Column(Boolean, default=False)
-    created_at = Column(DateTime, nullable=False)
-    updated_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)  # Auto-generate created_at timestamp
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)  # Auto-update updated_at timestamp
+
+
+    # Relationships
+    inspections = relationship("Inspection", back_populates="contact")  # Define relationship to Inspections
 
 # ContactComments
 class ContactComment(Base):
@@ -253,8 +268,11 @@ class Unit(Base):
     number = Column(String)
     address_id = Column(BigInteger, ForeignKey('addresses.id'), nullable=False)
     vacancy_status = Column(String)
-    created_at = Column(DateTime, nullable=False)
-    updated_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)  # Auto-generate created_at timestamp
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)  # Auto-update updated_at timestamp
+
+    # Relationships
+    areas = relationship("Area", back_populates="unit")  # Unit has many Areas
 
 # InspectionCodes
 class InspectionCode(Base):
@@ -263,8 +281,9 @@ class InspectionCode(Base):
     id = Column(BigInteger, primary_key=True, index=True)
     inspection_id = Column(BigInteger, ForeignKey('inspections.id'), nullable=False)
     code_id = Column(BigInteger, ForeignKey('codes.id'), nullable=False)
-    created_at = Column(DateTime, nullable=False)
-    updated_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)  # Auto-generate created_at timestamp
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)  # Auto-update updated_at timestamp
+
 
 # InspectionComments
 class InspectionComment(Base):
@@ -274,8 +293,9 @@ class InspectionComment(Base):
     user_id = Column(BigInteger, ForeignKey('users.id'), nullable=False)
     inspection_id = Column(BigInteger, ForeignKey('inspections.id'), nullable=False)
     content = Column(Text)
-    created_at = Column(DateTime, nullable=False)
-    updated_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)  # Auto-generate created_at timestamp
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)  # Auto-update updated_at timestamp
+
 
 # Inspections
 class Inspection(Base):
@@ -291,8 +311,9 @@ class Inspection(Base):
     originator = Column(String)
     unit_id = Column(BigInteger, ForeignKey('units.id'))
     address_id = Column(BigInteger, ForeignKey('addresses.id'), nullable=False)
-    created_at = Column(DateTime, nullable=False)
-    updated_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)  # Auto-generate created_at timestamp
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)  # Auto-update updated_at timestamp
+
     assignee = Column(String)
     inspector_id = Column(BigInteger, ForeignKey('users.id'))
     name = Column(String)
@@ -321,6 +342,8 @@ class Inspection(Base):
     # Relationships
     address = relationship("Address", back_populates="inspections")
     inspector = relationship("User", back_populates="inspections")
+    contact = relationship("Contact", back_populates="inspections")
+    areas = relationship("Area", back_populates="inspection", cascade="all, delete-orphan")  # Inspection has many Areas
 
 # Licenses
 class License(Base):
@@ -338,8 +361,9 @@ class License(Base):
     date_issued = Column(Date)
     conditions = Column(Text)
     paid = Column(Boolean, default=False, nullable=False)
-    created_at = Column(DateTime, nullable=False)
-    updated_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)  # Auto-generate created_at timestamp
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)  # Auto-update updated_at timestamp
+
 
 # Notifications
 class Notification(Base):
@@ -351,8 +375,9 @@ class Notification(Base):
     inspection_id = Column(BigInteger, ForeignKey('inspections.id'), nullable=False)
     user_id = Column(BigInteger, ForeignKey('users.id'), nullable=False)
     read = Column(Boolean, default=False)
-    created_at = Column(DateTime, nullable=False)
-    updated_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)  # Auto-generate created_at timestamp
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)  # Auto-update updated_at timestamp
+
 
 # Observations
 class Observation(Base):
@@ -363,8 +388,9 @@ class Observation(Base):
     area_id = Column(BigInteger, ForeignKey('areas.id'), nullable=False)
     photos = Column(String)
     potentialvio = Column(Boolean)
-    created_at = Column(DateTime, nullable=False)
-    updated_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)  # Auto-generate created_at timestamp
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)  # Auto-update updated_at timestamp
+
 
 # Prompts
 class Prompt(Base):
@@ -373,8 +399,11 @@ class Prompt(Base):
     id = Column(BigInteger, primary_key=True, index=True)
     content = Column(String)
     room_id = Column(BigInteger, ForeignKey('rooms.id'), nullable=False)
-    created_at = Column(DateTime, nullable=False)
-    updated_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)  # Auto-generate created_at timestamp
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)  # Auto-update updated_at timestamp
+
+    # Relationships
+    room = relationship("Room", back_populates="prompts")  # Prompt belongs to a Room
 
 # Rooms
 class Room(Base):
@@ -382,8 +411,11 @@ class Room(Base):
     
     id = Column(BigInteger, primary_key=True, index=True)
     name = Column(String)
-    created_at = Column(DateTime, nullable=False)
-    updated_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)  # Auto-generate created_at timestamp
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)  # Auto-update updated_at timestamp
+
+    # Relationships
+    prompts = relationship("Prompt", back_populates="room")  # Room has many Prompts
 
 # UnitContacts
 class UnitContact(Base):
@@ -392,8 +424,9 @@ class UnitContact(Base):
     id = Column(BigInteger, primary_key=True, index=True)
     unit_id = Column(BigInteger, ForeignKey('units.id'), nullable=False)
     contact_id = Column(BigInteger, ForeignKey('contacts.id'), nullable=False)
-    created_at = Column(DateTime, nullable=False)
-    updated_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)  # Auto-generate created_at timestamp
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)  # Auto-update updated_at timestamp
+
 
 # Users
 class User(Base):
@@ -408,8 +441,9 @@ class User(Base):
     name = Column(String)
     phone = Column(String)
     role = Column(Integer, default=0)
-    created_at = Column(DateTime, nullable=False)
-    updated_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)  # Auto-generate created_at timestamp
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)  # Auto-update updated_at timestamp
+
 
     # Relationships
     inspections = relationship("Inspection", back_populates="inspector")  # Define relationship to Inspections
@@ -434,8 +468,9 @@ class ViolationCode(Base):
     id = Column(BigInteger, primary_key=True, index=True)
     violation_id = Column(BigInteger, ForeignKey('violations.id'), nullable=False)
     code_id = Column(BigInteger, ForeignKey('codes.id'), nullable=False)
-    created_at = Column(DateTime, nullable=False)
-    updated_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)  # Auto-generate created_at timestamp
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)  # Auto-update updated_at timestamp
+
 
 # ViolationComments
 class ViolationComment(Base):
@@ -445,8 +480,9 @@ class ViolationComment(Base):
     violation_id = Column(BigInteger, ForeignKey('violations.id'), nullable=False)
     user_id = Column(BigInteger, ForeignKey('users.id'), nullable=False)
     content = Column(Text)
-    created_at = Column(DateTime, nullable=False)
-    updated_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)  # Auto-generate created_at timestamp
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)  # Auto-update updated_at timestamp
+
 
 # Violations
 class Violation(Base):
@@ -465,8 +501,9 @@ class Violation(Base):
     inspection_id = Column(BigInteger, ForeignKey('inspections.id'))
     comment = Column(Text)
     business_id = Column(BigInteger)
-    created_at = Column(DateTime, nullable=False)
-    updated_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)  # Auto-generate created_at timestamp
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)  # Auto-update updated_at timestamp
+
 
     # Relationships
     address = relationship("Address", back_populates="violations") # Violation belongs to an Address

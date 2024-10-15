@@ -221,6 +221,7 @@ class InspectionResponse(BaseModel):
     unit_id: Optional[int] = None
     business_id: Optional[int] = None
     comment: Optional[str] = None
+    contact: Optional[ContactResponse] = None
     created_at: datetime
     updated_at: datetime
 
@@ -283,3 +284,74 @@ class ContactCommentResponse(ContactCommentBase):
     class Config:
         from_attributes = True
 
+# Pydantic schema for Areas
+class AreaBase(BaseModel):
+    name: str
+    notes: Optional[str] = None
+    photos: Optional[List[str]] = None
+
+class AreaCreate(AreaBase):
+    unit_id: Optional[int] = None
+
+class AreaResponse(AreaBase):
+    id: int
+    name: str
+    inspection_id: int
+    notes: Optional[str] = None
+    photos: Optional[List[str]] = None
+    unit_id: Optional[int] = None  # Include the unit_id field
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# Pydantic schema for Units
+class UnitBase(BaseModel):
+    number: str
+
+class UnitCreate(UnitBase):
+    pass
+
+class UnitResponse(UnitBase):
+    id: int
+    number: str
+    address_id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# Pydantic schema for Rooms
+class RoomBase(BaseModel):
+    name: str
+    
+class RoomCreate(RoomBase):
+    pass
+
+class RoomResponse(RoomBase):
+    id: int
+    name: str
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# Pydantic schema for Prompts
+class PromptBase(BaseModel):
+    content: str
+
+class PromptCreate(PromptBase):
+    pass
+
+class PromptResponse(PromptBase):
+    id: int
+    content: str
+    room_id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True

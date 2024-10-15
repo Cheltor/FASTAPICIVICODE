@@ -1,8 +1,8 @@
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session, joinedload
 from typing import List
-from models import Inspection
-from schemas import InspectionCreate, InspectionResponse
+from models import Inspection, Contact, Address, Area, Room, Prompt
+from schemas import InspectionCreate, InspectionResponse, ContactResponse, AddressResponse, AreaResponse, AreaCreate, RoomResponse, RoomCreate, PromptCreate, PromptResponse
 from database import get_db
 
 router = APIRouter()
@@ -31,7 +31,16 @@ def create_inspection(inspection: InspectionCreate, db: Session = Depends(get_db
 # Get a specific inspection by ID
 @router.get("/inspections/{inspection_id}", response_model=InspectionResponse)
 def get_inspection(inspection_id: int, db: Session = Depends(get_db)):
-    inspection = db.query(Inspection).filter(Inspection.id == inspection_id).first()
+    inspection = (
+      db.query(Inspection)
+      .options(
+        joinedload(Inspection.address),  # Eagerly load address relationship
+        joinedload(Inspection.contact)  # Eagerly load contact relationship
+      )
+      .filter(Inspection.id == inspection_id)
+      .first()
+      )
+
     if not inspection:
         raise HTTPException(status_code=404, detail="Inspection not found")
     return inspection
@@ -67,3 +76,149 @@ def get_complaints_by_address(address_id: int, db: Session = Depends(get_db)):
       .all()
     )
     return complaints
+
+  
+# Get all areas beloning to a specific inspection
+@router.get("/inspections/{inspection_id}/areas", response_model=List[AreaResponse])
+def get_areas_by_inspection(inspection_id: int, db: Session = Depends(get_db)):
+    areas = db.query(Area).filter(Area.inspection_id == inspection_id
+    ).order_by(Area.created_at.desc()).all()
+    return areas
+
+# Create a new area
+@router.post("/inspections/{inspection_id}/areas", response_model=AreaResponse)
+def create_area_for_inspection(inspection_id: int, area: AreaCreate, db: Session = Depends(get_db)):
+    inspection = db.query(Inspection).filter(Inspection.id == inspection_id).first()
+
+    if not inspection:
+        raise HTTPException(status_code=404, detail="Inspection not found")
+
+    # Create a new area and associate it with the inspection
+    new_area = Area(**area.dict(), inspection_id=inspection_id)
+    db.add(new_area)
+    db.commit()
+    db.refresh(new_area)
+
+    return new_area
+
+# Get all areas belonging to a specific unit
+@router.get("/inspections/{inspection_id}/unit/{unit_id}/areas", response_model=List[AreaResponse])
+def get_areas_by_unit(inspection_id: int, unit_id: int, db: Session = Depends(get_db)):
+    areas = db.query(Area).filter(Area.inspection_id == inspection_id, Area.unit_id == unit_id
+    ).order_by(Area.created_at.desc()).all()
+    return areas
+
+# Create an area for a specific unit
+@router.post("/inspections/{inspection_id}/unit/{unit_id}/areas", response_model=AreaResponse)
+def create_area_for_unit(inspection_id: int, unit_id: int, area: AreaCreate, db: Session = Depends(get_db)):
+    inspection = db.query(Inspection).filter(Inspection.id == inspection_id).first()
+
+    if not inspection:
+        raise HTTPException(status_code=404, detail="Inspection not found")
+
+    # Create a new area and associate it with the inspection and unit
+    new_area = Area(**area.dict(), inspection_id=inspection_id, unit_id=unit_id)
+    db.add(new_area)
+    db.commit()
+    db.refresh(new_area)
+
+    return new_area
+
+# Get all areas for a specific inspection and unit
+@router.get("/inspections/{inspection_id}/unit/{unit_id}/areas/count", response_model=int)
+def get_area_count_by_unit_and_inspection(inspection_id: int, unit_id: int, db: Session = Depends(get_db)):
+    area_count = db.query(Area).filter(Area.inspection_id == inspection_id, Area.unit_id == unit_id).count()
+    return area_count
+
+# Get all rooms
+@router.get("/rooms/", response_model=List[RoomResponse])
+def get_rooms(skip: int = 0, db: Session = Depends(get_db)):
+    rooms = db.query(Room).offset(skip).all()
+    return rooms
+
+# Create a new room
+@router.post("/rooms/", response_model=RoomResponse)
+def create_room(room: RoomCreate, db: Session = Depends(get_db)):
+    new_room = Room(**room.dict())
+    db.add(new_room)
+    db.commit()
+    db.refresh(new_room)
+    return new_room
+
+# Show a room
+@router.get("/rooms/{room_id}", response_model=RoomResponse)
+def get_room(room_id: int, db: Session = Depends(get_db)):
+    room = db.query(Room).filter(Room.id == room_id).first()
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+    return room
+
+# Edit a room
+@router.put("/rooms/{room_id}", response_model=RoomResponse)
+def update_room(room_id: int, room: RoomCreate, db: Session = Depends(get_db)):
+    room_to_update = db.query(Room).filter(Room.id == room_id).first()
+    if not room_to_update:
+        raise HTTPException(status_code=404, detail="Room not found")
+    room_data = room.dict()
+    for key, value in room_data.items():
+        setattr(room_to_update, key, value)
+    db.commit()
+    db.refresh(room_to_update)
+    return room_to_update
+
+# Delete a room
+@router.delete("/rooms/{room_id}")
+def delete_room(room_id: int, db: Session = Depends(get_db)):
+    room = db.query(Room).filter(Room.id == room_id).first()
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+    db.delete(room)
+    db.commit()
+    return {"message": "Room deleted successfully"}
+
+# Get all prompts for a specific Room
+@router.get("/rooms/{room_id}/prompts", response_model=List[PromptResponse])
+def get_prompts_by_room(room_id: int, db: Session = Depends(get_db)):
+    prompts = db.query(Prompt).filter(Prompt.room_id == room_id).all()
+    return prompts
+
+
+# Create a new prompt
+@router.post("/rooms/{room_id}/prompts", response_model=PromptResponse)
+def create_prompt_for_room(room_id: int, prompt: PromptCreate, db: Session = Depends(get_db)):
+    room = db.query(Room).filter(Room.id == room_id).first()
+
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+
+    # Create a new prompt and associate it with the room
+    new_prompt = Prompt(**prompt.dict(), room_id=room_id)
+    db.add(new_prompt)
+    db.commit()
+    db.refresh(new_prompt)
+
+    return new_prompt
+
+# Edit a prompt
+@router.put("/prompts/{prompt_id}", response_model=PromptResponse)
+def update_prompt(prompt_id: int, prompt: PromptCreate, db: Session = Depends(get_db)):
+    prompt_to_update = db.query(Prompt).filter(Prompt.id == prompt_id).first()
+    if not prompt_to_update:
+        raise HTTPException(status_code=404, detail="Prompt not found")
+    prompt_data = prompt.dict()
+    for key, value in prompt_data.items():
+        setattr(prompt_to_update, key, value)
+    db.commit()
+    db.refresh(prompt_to_update)
+    return prompt_to_update
+
+# Delete a prompt
+@router.delete("/prompts/{prompt_id}")
+def delete_prompt(prompt_id: int, db: Session = Depends(get_db)):
+    prompt = db.query(Prompt).filter(Prompt.id == prompt_id).first()
+    if not prompt:
+        raise HTTPException(status_code=404, detail="Prompt not found")
+    db.delete(prompt)
+    db.commit()
+    return {"message": "Prompt deleted successfully"}
+

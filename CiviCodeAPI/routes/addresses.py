@@ -1,8 +1,8 @@
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 from typing import List
-from models import Address, Comment, Violation, Inspection
-from schemas import AddressCreate, AddressResponse, CommentResponse, ViolationResponse, InspectionResponse, ViolationCreate, CommentCreate, InspectionCreate
+from models import Address, Comment, Violation, Inspection, Unit
+from schemas import AddressCreate, AddressResponse, CommentResponse, ViolationResponse, InspectionResponse, ViolationCreate, CommentCreate, InspectionCreate, UnitResponse, UnitCreate
 from database import get_db  # Assuming a get_db function is set up to provide the database session
 
 # Create a router instance
@@ -241,3 +241,36 @@ def delete_address_inspection(address_id: int, inspection_id: int, db: Session =
     db.delete(existing_inspection)
     db.commit()
     return existing_inspection
+
+# Show all the units for the address
+@router.get("/addresses/{address_id}/units", response_model=List[UnitResponse])
+def get_address_units(address_id: int, db: Session = Depends(get_db)):
+    # Query the units for the given address ID and order by created_at descending
+    units = db.query(Unit).filter(Unit.address_id == address_id).order_by(Unit.created_at.desc()).all()
+    
+    # Return the units (it will be an empty list if no units are found)
+    return units  # No need to raise an exception; an empty list will be returned if no units exist
+
+# Add a unit to the address
+@router.post("/addresses/{address_id}/units", response_model=UnitResponse)
+def create_unit(address_id: int, unit: UnitCreate, db: Session = Depends(get_db)):
+    # Check if the address exists
+    address = db.query(Address).filter(Address.id == address_id).first()
+    if not address:
+        raise HTTPException(status_code=404, detail="Address not found")
+    
+    # Create a new unit
+    new_unit = Unit(**unit.dict(), address_id=address_id)
+    db.add(new_unit)
+    db.commit()
+    db.refresh(new_unit)
+    return new_unit
+
+# Unit information
+@router.get("/units/{unit_id}", response_model=UnitResponse)
+def get_unit(unit_id: int, db: Session = Depends(get_db)):
+    unit = db.query(Unit).filter(Unit.id == unit_id).first()
+    if not unit:
+        raise HTTPException(status_code=404, detail="Unit not found")
+    return unit
+
