@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Replace this with your actual database URL
-DATABASE_URL = os.getenv("DATABASE_URL","postgresql://rchelton:password@localhost:5433/codeenforcement_development")
+DATABASE_URL = os.getenv("HEROKU_DATABASE_URL","postgresql://rchelton:password@localhost:5433/codeenforcement_development")
 
 # Create the SQLAlchemy engine
 engine = create_engine(DATABASE_URL)
