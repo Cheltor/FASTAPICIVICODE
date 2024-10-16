@@ -107,6 +107,7 @@ class Area(Base):
     # Relationships
     inspection = relationship("Inspection", back_populates="areas")  # Define relationship to Inspections
     unit = relationship("Unit", back_populates="areas")  # Define relationship to Units
+    observations = relationship("Observation", back_populates="area", cascade="all, delete-orphan")  # Area has many Observations
 
 # AreaCodes
 class AreaCode(Base):
@@ -388,9 +389,13 @@ class Observation(Base):
     area_id = Column(BigInteger, ForeignKey('areas.id'), nullable=False)
     photos = Column(String)
     potentialvio = Column(Boolean)
+    user_id = Column(BigInteger, ForeignKey('users.id'), nullable=False)
     created_at = Column(DateTime, default=func.now(), nullable=False)  # Auto-generate created_at timestamp
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)  # Auto-update updated_at timestamp
 
+    # Relationships
+    area = relationship("Area", back_populates="observations")  # Observation belongs to an Area
+    user = relationship("User", back_populates="observations")  # Observation belongs to a User
 
 # Prompts
 class Prompt(Base):
@@ -448,6 +453,7 @@ class User(Base):
     # Relationships
     inspections = relationship("Inspection", back_populates="inspector")  # Define relationship to Inspections
     comments = relationship("Comment", back_populates="user")  # Define relationship to Comments
+    observations = relationship("Observation", back_populates="user")  # Define relationship to Observations
 
 # Versions
 class Version(Base):

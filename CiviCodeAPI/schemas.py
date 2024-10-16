@@ -355,3 +355,25 @@ class PromptResponse(PromptBase):
 
     class Config:
         from_attributes = True
+
+# Pydantic schema for Observations
+class ObservationBase(BaseModel):
+    content: str
+    area_id: int
+    user_id: int
+    potentialvio: Optional[bool] = False
+    photos: Optional[List[str]] = None
+
+class ObservationCreate(ObservationBase):
+    pass
+
+class ObservationResponse(ObservationBase):
+    id: int
+    content: str
+    area_id: int
+    user_id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True

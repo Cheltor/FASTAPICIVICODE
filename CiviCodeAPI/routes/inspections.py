@@ -1,8 +1,8 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, status
 from sqlalchemy.orm import Session, joinedload
 from typing import List
-from models import Inspection, Contact, Address, Area, Room, Prompt
-from schemas import InspectionCreate, InspectionResponse, ContactResponse, AddressResponse, AreaResponse, AreaCreate, RoomResponse, RoomCreate, PromptCreate, PromptResponse
+from models import Inspection, Contact, Address, Area, Room, Prompt, Observation
+from schemas import InspectionCreate, InspectionResponse, ContactResponse, AddressResponse, AreaResponse, AreaCreate, RoomResponse, RoomCreate, PromptCreate, PromptResponse, ObservationCreate, ObservationResponse
 from database import get_db
 
 router = APIRouter()
@@ -256,3 +256,31 @@ def delete_area(area_id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"message": "Area deleted successfully"}
 
+# Get all observations for a specific area
+@router.get("/areas/{area_id}/observations", response_model=List[ObservationResponse])
+def get_observations_for_area(area_id: int, db: Session = Depends(get_db)):
+    observations = db.query(Observation).filter(Observation.area_id == area_id).all()
+    return observations
+
+# Create a new observation for an area
+@router.post("/areas/{area_id}/observations", response_model=ObservationResponse, status_code=status.HTTP_201_CREATED)
+def create_observation_for_area(area_id: int, observation: ObservationCreate, db: Session = Depends(get_db)):
+    # Check if the area exists
+    area = db.query(Area).filter(Area.id == area_id).first()
+    if not area:
+        raise HTTPException(status_code=404, detail="Area not found")
+    
+    # Ensure that user_id is passed and set
+    new_observation = Observation(
+        content=observation.content,
+        area_id=area_id,
+        user_id=observation.user_id,  # Make sure user_id is set
+        photos=','.join(observation.photos) if observation.photos else None,  # Store photos as a string
+        potentialvio=observation.potentialvio
+    )
+    
+    db.add(new_observation)
+    db.commit()
+    db.refresh(new_observation)
+
+    return new_observation
