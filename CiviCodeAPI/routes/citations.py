@@ -1,8 +1,8 @@
 from fastapi import APIRouter, HTTPException, Depends
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import List
 from models import Citation, Violation
-from schemas import CitationCreate, CitationResponse
+from schemas import CitationCreate, CitationResponse, ViolationResponse
 from database import get_db
 
 router = APIRouter()
@@ -10,8 +10,24 @@ router = APIRouter()
 # Get all citations
 @router.get("/citations/", response_model=List[CitationResponse])
 def get_citations(skip: int = 0, db: Session = Depends(get_db)):
-    citations = db.query(Citation).order_by(Citation.created_at.desc()).offset(skip).all()
-    return citations
+    citations = (
+        db.query(Citation)
+        .options(
+            joinedload(Citation.violation).joinedload(Violation.address)
+        )
+        .order_by(Citation.created_at.desc())
+        .offset(skip)
+        .all()
+    )
+    
+    # Add combadd to the response
+    response = []
+    for citation in citations:
+        citation_dict = citation.__dict__
+        citation_dict['combadd'] = citation.violation.address.combadd
+        response.append(citation_dict)
+    
+    return response
 
 # Create a new citation
 @router.post("/citations/", response_model=CitationResponse)

@@ -1,6 +1,7 @@
-from pydantic import BaseModel
-from typing import Optional
+from pydantic import BaseModel, validator
+from typing import Optional, List
 from datetime import datetime, date
+from constants import DEADLINE_OPTIONS, DEADLINE_VALUES
 
 # Pydantic schema for address
 class AddressCreate(BaseModel):
@@ -56,6 +57,7 @@ class UserCreate(UserBase):
 
 class UserResponse(UserBase):
     id: int
+    name: Optional[str] = None
     email: str
     created_at: datetime
     updated_at: datetime
@@ -117,6 +119,12 @@ class ViolationBase(BaseModel):
     business_id: Optional[int] = None
     comment: Optional[str] = None
 
+    @validator('deadline')
+    def validate_deadline(cls, value):
+        if value not in DEADLINE_OPTIONS:
+            raise ValueError(f"Invalid deadline value: {value}")
+        return value
+
 class ViolationCreate(ViolationBase):
     pass
 
@@ -124,6 +132,9 @@ class ViolationResponse(ViolationBase):
     id: int
     created_at: datetime
     updated_at: datetime
+    combadd: Optional[str] = None
+    deadline_date: Optional[datetime]  # Include the deadline date in the response
+
 
     class Config:
         from_attributes = True
@@ -131,9 +142,8 @@ class ViolationResponse(ViolationBase):
 # Pydantic schema for Comments
 class CommentBase(BaseModel):
     content: str
-    address_id: int
     user_id: int
-    unit_id: Optional[int]  # Unit ID is optional
+    unit_id: Optional[int] = None  # Unit ID is optional
 
 # Schema for creating a new comment (doesn't include id, created_at, updated_at)
 class CommentCreate(CommentBase):
@@ -142,8 +152,13 @@ class CommentCreate(CommentBase):
 # Schema for returning comment data in API responses
 class CommentResponse(CommentBase):
     id: int
+    content: str
+    user_id: int
+    user: UserResponse  # Include the user response here for returning full user data
+    unit_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime
+
 
     class Config:
         from_attributes = True  # This allows returning ORM models as dicts
@@ -167,9 +182,15 @@ class CitationResponse(BaseModel):
     id: int
     violation_id: int  # Link to the violation
     deadline: Optional[date] = None
+    fine: Optional[float] = None
     citationid: Optional[str] = None
+    status: Optional[int] = None
+    trial_date: Optional[date] = None
+    code_id: Optional[int] = None
+    code_name: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+    combadd: Optional[str] = None  # Add combadd attribute
 
     class Config:
         from_attributes = True
@@ -200,6 +221,7 @@ class InspectionResponse(BaseModel):
     unit_id: Optional[int] = None
     business_id: Optional[int] = None
     comment: Optional[str] = None
+    contact: Optional[ContactResponse] = None
     created_at: datetime
     updated_at: datetime
 
@@ -218,6 +240,9 @@ class CodeCreate(CodeBase):
 
 class CodeResponse(CodeBase):
     id: int
+    name: str
+    chapter: str
+    section: str
     created_at: datetime
     updated_at: datetime
 
@@ -259,3 +284,96 @@ class ContactCommentResponse(ContactCommentBase):
     class Config:
         from_attributes = True
 
+# Pydantic schema for Areas
+class AreaBase(BaseModel):
+    name: str
+    notes: Optional[str] = None
+    photos: Optional[List[str]] = None
+
+class AreaCreate(AreaBase):
+    unit_id: Optional[int] = None
+
+class AreaResponse(AreaBase):
+    id: int
+    name: str
+    inspection_id: int
+    notes: Optional[str] = None
+    photos: Optional[List[str]] = None
+    unit_id: Optional[int] = None  # Include the unit_id field
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# Pydantic schema for Units
+class UnitBase(BaseModel):
+    number: str
+
+class UnitCreate(UnitBase):
+    pass
+
+class UnitResponse(UnitBase):
+    id: int
+    number: str
+    address_id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# Pydantic schema for Rooms
+class RoomBase(BaseModel):
+    name: str
+    
+class RoomCreate(RoomBase):
+    pass
+
+class RoomResponse(RoomBase):
+    id: int
+    name: str
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# Pydantic schema for Prompts
+class PromptBase(BaseModel):
+    content: str
+
+class PromptCreate(PromptBase):
+    pass
+
+class PromptResponse(PromptBase):
+    id: int
+    content: str
+    room_id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# Pydantic schema for Observations
+class ObservationBase(BaseModel):
+    content: str
+    area_id: int
+    user_id: int
+    potentialvio: Optional[bool] = False
+    photos: Optional[List[str]] = None
+
+class ObservationCreate(ObservationBase):
+    pass
+
+class ObservationResponse(ObservationBase):
+    id: int
+    content: str
+    area_id: int
+    user_id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
