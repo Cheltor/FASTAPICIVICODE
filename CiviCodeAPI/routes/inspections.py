@@ -294,7 +294,6 @@ def create_observation_for_area(
     new_observation = Observation(
         content=observation.content,
         area_id=area_id,  # Use area_id from the URL
-        user_id=observation.user_id,
         potentialvio=observation.potentialvio
     )
     db.add(new_observation)
