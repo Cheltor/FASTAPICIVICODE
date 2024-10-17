@@ -2,7 +2,13 @@ from sqlalchemy import Column, Integer, String, Boolean, Float, DateTime, Foreig
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime, timedelta
-from constants import DEADLINE_OPTIONS, DEADLINE_VALUES
+try:
+    # If running normally (e.g., FastAPI server)
+    from constants import DEADLINE_OPTIONS, DEADLINE_VALUES
+except ImportError:
+    # If running in Alembic context
+    from .constants import DEADLINE_OPTIONS, DEADLINE_VALUES
+
 
 Base = declarative_base()
 
@@ -396,6 +402,20 @@ class Observation(Base):
     # Relationships
     area = relationship("Area", back_populates="observations")  # Observation belongs to an Area
     user = relationship("User", back_populates="observations")  # Observation belongs to a User
+    photos = relationship("Photo", back_populates="observation", cascade="all, delete-orphan")  # Observation has many Photos
+
+# Photos
+class Photo(Base):
+    __tablename__ = "photos"
+    
+    id = Column(BigInteger, primary_key=True, index=True)
+    url = Column(String, nullable=False)
+    observation_id = Column(BigInteger, ForeignKey('observations.id'), nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)  # Auto-generate created_at timestamp
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)  # Auto-update updated
+
+    # Relationships
+    observation = relationship("Observation", back_populates="photos")  # Photo belongs to an Observation
 
 # Prompts
 class Prompt(Base):

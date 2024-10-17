@@ -1,11 +1,28 @@
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, HTTPException, Depends, status, UploadFile, File, Form
 from sqlalchemy.orm import Session, joinedload
 from typing import List
-from models import Inspection, Contact, Address, Area, Room, Prompt, Observation
+from models import Inspection, Contact, Address, Area, Room, Prompt, Observation, Photo
 from schemas import InspectionCreate, InspectionResponse, ContactResponse, AddressResponse, AreaResponse, AreaCreate, RoomResponse, RoomCreate, PromptCreate, PromptResponse, ObservationCreate, ObservationResponse
 from database import get_db
+from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
+from dotenv import load_dotenv
+import os 
+import uuid
+
 
 router = APIRouter()
+
+# Load the environment variables
+env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
+load_dotenv(dotenv_path=env_path)
+
+connection_string = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+
+# Initialize the Azure Blob Storage client
+connection_string = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+blob_service_client = BlobServiceClient.from_connection_string(connection_string)
+
+container_name = "civicodephotos"
 
 # Get all inspections
 @router.get("/inspections/", response_model=List[InspectionResponse])
@@ -264,23 +281,55 @@ def get_observations_for_area(area_id: int, db: Session = Depends(get_db)):
 
 # Create a new observation for an area
 @router.post("/areas/{area_id}/observations", response_model=ObservationResponse, status_code=status.HTTP_201_CREATED)
-def create_observation_for_area(area_id: int, observation: ObservationCreate, db: Session = Depends(get_db)):
-    # Check if the area exists
+def create_observation_for_area(
+    area_id: int,  # Path parameter is used directly here
+    observation: ObservationCreate,
+    db: Session = Depends(get_db)
+):
+    # Create the observation entry in the database
     area = db.query(Area).filter(Area.id == area_id).first()
     if not area:
         raise HTTPException(status_code=404, detail="Area not found")
-    
-    # Ensure that user_id is passed and set
+
     new_observation = Observation(
         content=observation.content,
-        area_id=area_id,
-        user_id=observation.user_id,  # Make sure user_id is set
-        photos=','.join(observation.photos) if observation.photos else None,  # Store photos as a string
+        area_id=area_id,  # Use area_id from the URL
+        user_id=observation.user_id,
         potentialvio=observation.potentialvio
     )
-    
     db.add(new_observation)
     db.commit()
     db.refresh(new_observation)
 
     return new_observation
+
+
+
+# Upload photos for an observation
+@router.post("/observations/{observation_id}/photos", status_code=status.HTTP_201_CREATED)
+async def upload_photos_for_observation(
+    observation_id: int, 
+    files: List[UploadFile] = File(...), 
+    db: Session = Depends(get_db)
+):
+    observation = db.query(Observation).filter(Observation.id == observation_id).first()
+    if not observation:
+        raise HTTPException(status_code=404, detail="Observation not found")
+    
+    for file in files:
+        blob_name = f"{uuid.uuid4()}-{file.filename}"
+        blob_client = blob_service_client.get_blob_client(container=container_name, blob=blob_name)
+
+        try:
+            blob_client.upload_blob(file.file, overwrite=True)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to upload file {file.filename}: {str(e)}")
+
+        photo_url = f"https://{blob_service_client.account_name}.blob.core.windows.net/{container_name}/{blob_name}"
+
+        db_photo = Photo(url=photo_url, observation_id=observation_id)
+        db.add(db_photo)
+
+    db.commit()
+
+    return {"detail": "Photos uploaded successfully"}
