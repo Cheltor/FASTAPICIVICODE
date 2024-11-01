@@ -84,6 +84,7 @@ class Address(Base):
     inspections = relationship("Inspection", back_populates="address")  # Address has many Inspections
     comments = relationship("Comment", back_populates="address", cascade="all, delete-orphan") # Address has many Comments
     violations = relationship("Violation", back_populates="address", cascade="all, delete-orphan") # Address has many Violations
+    businesses = relationship("Business", back_populates="address", cascade="all, delete-orphan") # Address has many Businesses
 
 # AddressContacts
 class AddressContact(Base):
@@ -141,6 +142,8 @@ class Business(Base):
     created_at = Column(DateTime, default=func.now(), nullable=False)  # Auto-generate created_at timestamp
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)  # Auto-update updated_at timestamp
 
+    # Relationships
+    address = relationship("Address", back_populates="businesses")  # Define relationship to Address
 
 # BusinessContacts
 class BusinessContact(Base):

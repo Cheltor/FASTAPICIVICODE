@@ -80,6 +80,8 @@ class BusinessCreate(BusinessBase):
 
 class BusinessResponse(BusinessBase):
     id: int
+    address_id: int
+    address: Optional[AddressResponse] = None
     created_at: datetime
     updated_at: datetime
 
