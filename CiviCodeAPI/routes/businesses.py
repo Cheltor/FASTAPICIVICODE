@@ -36,7 +36,6 @@ def get_businesses(skip: int = 0, db: Session = Depends(get_db)):
                 created_at=business.created_at,
                 updated_at=business.updated_at
             )
-            print(f"Business Response: {business_response}")
             business_responses.append(business_response)
         except Exception as e:
             print(f"Error creating BusinessResponse for business '{business.name}': {e}")
