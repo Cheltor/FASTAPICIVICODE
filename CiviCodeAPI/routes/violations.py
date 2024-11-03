@@ -43,10 +43,22 @@ def create_violation(violation: ViolationCreate, db: Session = Depends(get_db)):
 # Get a specific violation by ID
 @router.get("/violation/{violation_id}", response_model=ViolationResponse)
 def get_violation(violation_id: int, db: Session = Depends(get_db)):
-    violation = db.query(Violation).filter(Violation.id == violation_id).first()
+    violation = (
+        db.query(Violation)
+        .filter(Violation.id == violation_id)
+        .options(joinedload(Violation.address))  # Eagerly load the Address relationship
+        .first()
+    )
     if not violation:
         raise HTTPException(status_code=404, detail="Violation not found")
-    return violation
+    
+    # Add combadd to the response
+    violation_dict = violation.__dict__
+    violation_dict['combadd'] = violation.address.combadd if violation.address else None
+    violation_dict['deadline_date'] = violation.deadline_date  # Access computed property
+    
+    return violation_dict
+
 
 # Get all violations for a specific Address
 @router.get("/violations/address/{address_id}", response_model=List[ViolationResponse])
