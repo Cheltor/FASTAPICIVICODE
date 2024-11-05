@@ -200,12 +200,11 @@ class CitationResponse(BaseModel):
 # Pydantic schema for Inspections
 class InspectionBase(BaseModel):
     address_id: int
-    user_id: int
     status: Optional[int] = None
-    inspection_type: Optional[str] = None
+    source: str
     unit_id: Optional[int] = None
     business_id: Optional[int] = None
-    comment: Optional[str] = None
+    description: Optional[str] = None
 
 class InspectionCreate(InspectionBase):
     pass
@@ -219,7 +218,6 @@ class InspectionResponse(BaseModel):
     status: Optional[str] = None
     source: Optional[str] = None
     scheduled_datetime: Optional[datetime] = None
-    inspection_type: Optional[str] = None
     unit_id: Optional[int] = None
     business_id: Optional[int] = None
     comment: Optional[str] = None

@@ -19,8 +19,6 @@ def get_violations(skip: int = 0, db: Session = Depends(get_db)):
         .all()
     )
 
-    
-    
     # Add combadd to the response
     response = []
     for violation in violations:

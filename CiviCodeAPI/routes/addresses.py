@@ -1,9 +1,10 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Query
 from sqlalchemy.orm import Session
 from typing import List
 from models import Address, Comment, Violation, Inspection, Unit
 from schemas import AddressCreate, AddressResponse, CommentResponse, ViolationResponse, InspectionResponse, ViolationCreate, CommentCreate, InspectionCreate, UnitResponse, UnitCreate
 from database import get_db  # Assuming a get_db function is set up to provide the database session
+from sqlalchemy import or_
 
 # Create a router instance
 router = APIRouter()
@@ -13,6 +14,27 @@ router = APIRouter()
 def get_addresses(skip: int = 0, db: Session = Depends(get_db)):
   addresses = db.query(Address).order_by(Address.id).offset(skip).all()
   return addresses
+
+# Search for addresses by partial match of combadd, with a limit on results
+@router.get("/addresses/search", response_model=List[AddressResponse])
+def search_addresses(
+    query: str = Query(..., description="Search term for address combadd or property name"),
+    limit: int = Query(5, ge=1, le=50, description="Limit the number of results"),
+    db: Session = Depends(get_db)
+):
+    # Perform a case-insensitive search on combadd or property_name using the query parameter
+    addresses = (
+        db.query(Address)
+        .filter(
+            or_(
+                Address.combadd.ilike(f"%{query}%"),    # Search by combadd
+                Address.property_name.ilike(f"%{query}%")  # Search by property_name
+            )
+        )
+        .limit(limit)
+        .all()
+    )
+    return addresses
 
 # Get a single address by ID
 @router.get("/addresses/{address_id}", response_model=AddressResponse)
@@ -68,11 +90,6 @@ def create_comment_for_address(address_id: int, comment: CommentCreate, db: Sess
     db.commit()
     db.refresh(new_comment)
     return new_comment
-
-
-
-
-
 
 # Update a comment for the address
 @router.put("/addresses/{address_id}/comments/{comment_id}", response_model=CommentResponse)
@@ -274,3 +291,10 @@ def get_unit(unit_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Unit not found")
     return unit
 
+# Get units by address ID
+@router.get("/units", response_model=List[UnitResponse])
+def get_units_by_address_id(address_id: int, db: Session = Depends(get_db)):
+    units = db.query(Unit).filter(Unit.address_id == address_id).order_by(Unit.created_at.desc()).all()
+    if not units:
+        raise HTTPException(status_code=404, detail="No units found for this address")
+    return units
