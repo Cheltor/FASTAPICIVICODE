@@ -47,3 +47,11 @@ def search_contacts(
     
     return contacts
 
+# Get a specific contact by ID
+@router.get("/contacts/{contact_id}", response_model=ContactResponse)
+def get_contact(contact_id: int, db: Session = Depends(get_db)):
+    contact = db.query(Contact).filter(Contact.id == contact_id).first()
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    return contact
+
