@@ -3,7 +3,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from typing import List, Union
 from models import User
-from schemas import UserResponse
+from schemas import UserResponse, UserCreate, UserUpdate
 from database import get_db
 from utils import verify_password
 from datetime import datetime, timedelta
@@ -65,3 +65,46 @@ async def read_users_me(
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
     return user
+
+# Get a specific user by ID
+@router.get("/users/{user_id}", response_model=UserResponse)
+def get_user(user_id: int, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+
+# Create a new user
+@router.post("/users/", response_model=UserResponse)
+def create_user(user: UserCreate, db: Session = Depends(get_db)):
+    new_user = User(**user.dict())
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    return new_user
+
+# Update a user
+@router.put("/users/{user_id}", response_model=UserResponse)
+def update_user(user_id: int, user: UserUpdate, db: Session = Depends(get_db)):
+    db_user = db.query(User).filter(User.id == user_id).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Update the user
+    for key, value in user.dict(exclude_unset=True).items():
+        setattr(db_user, key, value)
+    
+    db.commit()
+    db.refresh(db_user)
+    return db_user
+
+# Delete a user
+@router.delete("/users/{user_id}")
+def delete_user(user_id: int, db: Session = Depends(get_db)):
+    db_user = db.query(User).filter(User.id == user_id).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    db.delete(db_user)
+    db.commit()
+    return {"message": "User deleted successfully"}
