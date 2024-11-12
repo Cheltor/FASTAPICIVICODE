@@ -5,6 +5,7 @@ from models import Address, Comment, Violation, Inspection, Unit
 from schemas import AddressCreate, AddressResponse, CommentResponse, ViolationResponse, InspectionResponse, ViolationCreate, CommentCreate, InspectionCreate, UnitResponse, UnitCreate
 from database import get_db  # Assuming a get_db function is set up to provide the database session
 from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
 
 # Create a router instance
 router = APIRouter()
@@ -278,9 +279,13 @@ def create_unit(address_id: int, unit: UnitCreate, db: Session = Depends(get_db)
     
     # Create a new unit
     new_unit = Unit(**unit.dict(), address_id=address_id)
-    db.add(new_unit)
-    db.commit()
-    db.refresh(new_unit)
+    try:
+        db.add(new_unit)
+        db.commit()
+        db.refresh(new_unit)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Unit with this number already exists for this address")
     return new_unit
 
 # Unit information

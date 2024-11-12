@@ -62,6 +62,9 @@ class UserResponse(UserBase):
     created_at: datetime
     updated_at: datetime
 
+class UserUpdate(UserBase):
+    password: Optional[str] = None
+
     class Config:
         from_attributes = True
 
@@ -200,6 +203,7 @@ class CitationResponse(BaseModel):
 # Pydantic schema for Inspections
 class InspectionBase(BaseModel):
     address_id: int
+    contact_id: Optional[int] = None
     status: Optional[int] = None
     source: str
     unit_id: Optional[int] = None
@@ -383,4 +387,3 @@ class ObservationResponse(ObservationBase):
 
     class Config:
         from_attributes = True
-

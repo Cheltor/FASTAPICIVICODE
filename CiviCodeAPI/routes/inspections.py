@@ -1,14 +1,13 @@
 from fastapi import APIRouter, HTTPException, Depends, status, UploadFile, File, Form
 from sqlalchemy.orm import Session, joinedload
-from typing import List
+from typing import List, Optional
 from models import Inspection, Contact, Address, Area, Room, Prompt, Observation, Photo
-from schemas import InspectionCreate, InspectionResponse, ContactResponse, AddressResponse, AreaResponse, AreaCreate, RoomResponse, RoomCreate, PromptCreate, PromptResponse, ObservationCreate, ObservationResponse
+from schemas import InspectionResponse, ContactResponse, AddressResponse, AreaResponse, AreaCreate, RoomResponse, RoomCreate, PromptCreate, PromptResponse, ObservationCreate, ObservationResponse
 from database import get_db
 from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
 from dotenv import load_dotenv
 import os 
 import uuid
-
 
 router = APIRouter()
 
@@ -19,7 +18,6 @@ load_dotenv(dotenv_path=env_path)
 connection_string = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
 
 # Initialize the Azure Blob Storage client
-connection_string = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
 blob_service_client = BlobServiceClient.from_connection_string(connection_string)
 
 container_name = "civicodephotos"
@@ -38,11 +36,44 @@ def get_complaints(skip: int = 0, db: Session = Depends(get_db)):
 
 # Create a new inspection
 @router.post("/inspections/", response_model=InspectionResponse)
-def create_inspection(inspection: InspectionCreate, db: Session = Depends(get_db)):
-    new_inspection = Inspection(**inspection.dict())
+async def create_inspection(
+    address_id: Optional[int] = Form(None),
+    unit_id: Optional[int] = Form(None),
+    source: str = Form(...),
+    description: str = Form(""),
+    contact_id: Optional[int] = Form(None),
+    attachments: List[UploadFile] = File([]),
+    paid: bool = Form(False),
+    db: Session = Depends(get_db)
+):
+    new_inspection = Inspection(
+        address_id=address_id,
+        unit_id=unit_id,
+        source=source,
+        description=description,
+        contact_id=contact_id,
+        paid=paid
+    )
     db.add(new_inspection)
     db.commit()
     db.refresh(new_inspection)
+
+    for attachment in attachments:
+        blob_name = f"{uuid.uuid4()}-{attachment.filename}"
+        blob_client = blob_service_client.get_blob_client(container=container_name, blob=blob_name)
+
+        try:
+            blob_client.upload_blob(attachment.file, overwrite=True)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to upload file {attachment.filename}: {str(e)}")
+
+        photo_url = f"https://{blob_service_client.account_name}.blob.core.windows.net/{container_name}/{blob_name}"
+
+        db_photo = Photo(url=photo_url, inspection_id=new_inspection.id)
+        db.add(db_photo)
+
+    db.commit()
+
     return new_inspection
 
 # Get a specific inspection by ID

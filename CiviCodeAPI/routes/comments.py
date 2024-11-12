@@ -99,3 +99,12 @@ def create_contact_comment(contact_id: int, comment: ContactCommentCreate, db: S
     db.commit()
     db.refresh(new_comment)
     return new_comment
+
+# Comments for a specific Unit
+@router.get("/comments/unit/{unit_id}", response_model=List[CommentResponse])
+def get_comments_by_unit(unit_id: int, db: Session = Depends(get_db)):
+    comments = db.query(Comment).filter(Comment.unit_id == unit_id).order_by(Comment.created_at.desc()).all()
+    if not comments:
+        raise HTTPException(status_code=404, detail="Comments not found for this unit")
+    return comments
+

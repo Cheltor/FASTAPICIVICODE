@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, Float, DateTime, ForeignKey, Text, BigInteger, Date, func
+from sqlalchemy import Column, Integer, String, Boolean, Float, DateTime, ForeignKey, Text, BigInteger, Date, func, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime, timedelta
@@ -280,6 +280,8 @@ class Unit(Base):
     vacancy_status = Column(String)
     created_at = Column(DateTime, default=func.now(), nullable=False)  # Auto-generate created_at timestamp
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)  # Auto-update updated_at timestamp
+
+    __table_args__ = (UniqueConstraint('number', 'address_id', name='_number_address_uc'),)
 
     # Relationships
     areas = relationship("Area", back_populates="unit")  # Unit has many Areas
