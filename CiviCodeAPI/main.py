@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from routes import addresses_router, users_router, businesses_router, contacts_router, violations_router, comments_router, citations_router, inspections_router, codes_router, licenses_router, dashboard_router
 from database import engine, Base
+from storage import container_client
 import uvicorn
 
 # Initialize FastAPI app

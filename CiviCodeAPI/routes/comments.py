@@ -1,9 +1,13 @@
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
+from azure.storage.blob import generate_blob_sas, BlobSasPermissions
+from datetime import datetime, timedelta
 from typing import List
 from models import Comment, ContactComment, ActiveStorageAttachment, ActiveStorageBlob, User
 from schemas import CommentCreate, CommentResponse, ContactCommentCreate, ContactCommentResponse, UserResponse
 from database import get_db
+from storage import blob_service_client, CONTAINER_NAME
+import os
 
 router = APIRouter()
 
@@ -65,30 +69,42 @@ def get_comments_by_contact(contact_id: int, db: Session = Depends(get_db)):
 @router.get("/comments/{comment_id}/photos")
 def get_comment_photos(comment_id: int, db: Session = Depends(get_db)):
     # Retrieve the attachments for the comment
-    attachments = db.query(ActiveStorageAttachment).filter_by(record_id=comment_id, record_type='Comment', name='photos').all()
-    
+    attachments = db.query(ActiveStorageAttachment).filter_by(
+        record_id=comment_id, record_type='Comment', name='photos'
+    ).all()
+
     if not attachments:
         raise HTTPException(status_code=404, detail="Photos not found for this comment")
 
     photos = []
-    
+
     for attachment in attachments:
         # Retrieve the associated blob for each attachment
         blob = db.query(ActiveStorageBlob).filter_by(id=attachment.blob_id).first()
-        
+
         if not blob:
             continue  # Skip if no blob found (edge case)
-        
-        # Construct the Azure storage URL for each photo
-        photo_url = f"https://codeenforcement.blob.core.windows.net/ce-container/{blob.key}"
-        
+
+        # Generate a SAS token for the blob
+        sas_token = generate_blob_sas(
+            account_name=blob_service_client.account_name,
+            container_name=CONTAINER_NAME,
+            blob_name=blob.key,
+            account_key=blob_service_client.credential.account_key,
+            permission=BlobSasPermissions(read=True),
+            expiry=datetime.utcnow() + timedelta(hours=1)  # Token valid for 1 hour
+        )
+
+        # Construct the secure URL with SAS token
+        blob_url = f"https://{blob_service_client.account_name}.blob.core.windows.net/{CONTAINER_NAME}/{blob.key}?{sas_token}"
+
         # Append the photo details to the list
         photos.append({
             "filename": blob.filename,
             "content_type": blob.content_type,
-            "url": photo_url,
+            "url": blob_url,
         })
-    
+
     return photos
 
 # Create a new comment for a Contact
