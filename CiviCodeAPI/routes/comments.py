@@ -6,7 +6,7 @@ from typing import List
 from models import Comment, ContactComment, ActiveStorageAttachment, ActiveStorageBlob, User
 from schemas import CommentCreate, CommentResponse, ContactCommentCreate, ContactCommentResponse, UserResponse
 from database import get_db
-from storage import blob_service_client, CONTAINER_NAME
+from storage import blob_service_client, container_client, account_name, account_key, CONTAINER_NAME
 import os
 
 router = APIRouter()
@@ -68,13 +68,16 @@ def get_comments_by_contact(contact_id: int, db: Session = Depends(get_db)):
 # Fetch Comment photo by ID
 @router.get("/comments/{comment_id}/photos")
 def get_comment_photos(comment_id: int, db: Session = Depends(get_db)):
-    # Retrieve the attachments for the comment
+    # Check if the comment exists
+    comment = db.query(Comment).filter_by(id=comment_id).first()
+    if not comment:
+        # Return an empty list instead of raising a 404 error
+        return []
+
+    # Retrieve attachments for the comment
     attachments = db.query(ActiveStorageAttachment).filter_by(
         record_id=comment_id, record_type='Comment', name='photos'
     ).all()
-
-    if not attachments:
-        raise HTTPException(status_code=404, detail="Photos not found for this comment")
 
     photos = []
 
@@ -83,20 +86,24 @@ def get_comment_photos(comment_id: int, db: Session = Depends(get_db)):
         blob = db.query(ActiveStorageBlob).filter_by(id=attachment.blob_id).first()
 
         if not blob:
-            continue  # Skip if no blob found (edge case)
+            continue  # Skip if no blob found
 
         # Generate a SAS token for the blob
-        sas_token = generate_blob_sas(
-            account_name=blob_service_client.account_name,
-            container_name=CONTAINER_NAME,
-            blob_name=blob.key,
-            account_key=blob_service_client.credential.account_key,
-            permission=BlobSasPermissions(read=True),
-            expiry=datetime.utcnow() + timedelta(hours=1)  # Token valid for 1 hour
-        )
+        try:
+            sas_token = generate_blob_sas(
+                account_name=account_name,
+                container_name=CONTAINER_NAME,
+                blob_name=blob.key,
+                account_key=account_key,
+                permission=BlobSasPermissions(read=True),
+                expiry=datetime.utcnow() + timedelta(hours=1)  # Token valid for 1 hour
+            )
+        except Exception as e:
+            print(f"Error generating SAS token for blob {blob.key}: {e}")
+            continue  # Skip this blob if there's an error
 
         # Construct the secure URL with SAS token
-        blob_url = f"https://{blob_service_client.account_name}.blob.core.windows.net/{CONTAINER_NAME}/{blob.key}?{sas_token}"
+        blob_url = f"https://{account_name}.blob.core.windows.net/{CONTAINER_NAME}/{blob.key}?{sas_token}"
 
         # Append the photo details to the list
         photos.append({
@@ -106,7 +113,7 @@ def get_comment_photos(comment_id: int, db: Session = Depends(get_db)):
         })
 
     return photos
-
+    
 # Create a new comment for a Contact
 @router.post("/comments/{contact_id}/contact/", response_model=ContactCommentResponse)
 def create_contact_comment(contact_id: int, comment: ContactCommentCreate, db: Session = Depends(get_db)):
