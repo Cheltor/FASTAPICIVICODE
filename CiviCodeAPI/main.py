@@ -1,3 +1,4 @@
+import logging
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
@@ -5,6 +6,9 @@ from routes import addresses_router, users_router, businesses_router, contacts_r
 from database import engine, Base
 from storage import container_client
 import uvicorn
+
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 # Initialize FastAPI app
 @asynccontextmanager
@@ -69,4 +73,4 @@ def read_root():
 
 # Run the application (for development)
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, log_level="debug")

@@ -1,15 +1,20 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
 from sqlalchemy.orm import Session
 from azure.storage.blob import generate_blob_sas, BlobSasPermissions
 from datetime import datetime, timedelta
-from typing import List
-from models import Comment, ContactComment, ActiveStorageAttachment, ActiveStorageBlob, User
-from schemas import CommentCreate, CommentResponse, ContactCommentCreate, ContactCommentResponse, UserResponse
+from typing import List, Optional
+from models import Comment, ContactComment, ActiveStorageAttachment, ActiveStorageBlob, User, Unit
+from schemas import CommentCreate, CommentResponse, ContactCommentCreate, ContactCommentResponse, UserResponse, UnitResponse
 from database import get_db
 from storage import blob_service_client, container_client, account_name, account_key, CONTAINER_NAME
 import os
+import logging
 
 router = APIRouter()
+
+# Configure logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 # Get all comments
 @router.get("/comments/", response_model=List[CommentResponse])
@@ -20,10 +25,13 @@ def get_comments(skip: int = 0, db: Session = Depends(get_db)):
 # Create a new comment
 @router.post("/comments/", response_model=CommentResponse)
 def create_comment(comment: CommentCreate, db: Session = Depends(get_db)):
+    logger.debug(f"Received payload: {comment.dict()}")
+    logger.debug(f"Creating comment with content: {comment.content}, user_id: {comment.user_id}, unit_id: {comment.unit_id}")
     new_comment = Comment(**comment.dict())
     db.add(new_comment)
     db.commit()
     db.refresh(new_comment)
+    logger.debug(f"Created comment with ID: {new_comment.id}, unit_id: {new_comment.unit_id}")
     return new_comment
 
 # Get all comments for a specific Address
@@ -35,10 +43,13 @@ def get_comments_by_address(address_id: int, db: Session = Depends(get_db)):
         user = db.query(User).filter(User.id == comment.user_id).first()
         if user is None:
             raise HTTPException(status_code=404, detail="User not found")
+        unit = None
+        if comment.unit_id:
+            unit = db.query(Unit).filter(Unit.id == comment.unit_id).first()
         comment_responses.append(CommentResponse(
             id=comment.id,
             content=comment.content,
-            user_id=comment.user_id,  # Make sure to include the user_id here
+            user_id=comment.user_id,
             user=UserResponse(
                 id=user.id,
                 name=user.name,
@@ -49,13 +60,17 @@ def get_comments_by_address(address_id: int, db: Session = Depends(get_db)):
                 updated_at=user.updated_at
             ),
             unit_id=comment.unit_id,
+            unit=UnitResponse(
+                id=unit.id,
+                number=unit.number,
+                address_id=unit.address_id,
+                created_at=unit.created_at,
+                updated_at=unit.updated_at
+            ) if unit else None,
             created_at=comment.created_at,
             updated_at=comment.updated_at
         ))
     return comment_responses
-
-
-
 
 # Get all comments for a specific Contact
 @router.get("/comments/contact/{contact_id}", response_model=List[ContactCommentResponse])
@@ -99,7 +114,7 @@ def get_comment_photos(comment_id: int, db: Session = Depends(get_db)):
                 expiry=datetime.utcnow() + timedelta(hours=1)  # Token valid for 1 hour
             )
         except Exception as e:
-            print(f"Error generating SAS token for blob {blob.key}: {e}")
+            logger.error(f"Error generating SAS token for blob {blob.key}: {e}")
             continue  # Skip this blob if there's an error
 
         # Construct the secure URL with SAS token
@@ -129,5 +144,35 @@ def get_comments_by_unit(unit_id: int, db: Session = Depends(get_db)):
     comments = db.query(Comment).filter(Comment.unit_id == unit_id).order_by(Comment.created_at.desc()).all()
     if not comments:
         raise HTTPException(status_code=404, detail="Comments not found for this unit")
-    return comments
+    unit = db.query(Unit).filter(Unit.id == unit_id).first()
+    comment_responses = []
+    for comment in comments:
+        user = db.query(User).filter(User.id == comment.user_id).first()
+        if user is None:
+            raise HTTPException(status_code=404, detail="User not found")
+        comment_responses.append(CommentResponse(
+            id=comment.id,
+            content=comment.content,
+            user_id=comment.user_id,
+            user=UserResponse(
+                id=user.id,
+                name=user.name,
+                email=user.email,
+                phone=user.phone,
+                role=user.role,
+                created_at=user.created_at,
+                updated_at=user.updated_at
+            ),
+            unit_id=comment.unit_id,
+            unit=UnitResponse(
+                id=unit.id,
+                number=unit.number,
+                address_id=unit.address_id,
+                created_at=unit.created_at,
+                updated_at=unit.updated_at
+            ) if unit else None,
+            created_at=comment.created_at,
+            updated_at=comment.updated_at
+        ))
+    return comment_responses
 

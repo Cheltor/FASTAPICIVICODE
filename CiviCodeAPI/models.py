@@ -229,6 +229,7 @@ class Comment(Base):
     # Relationships
     address = relationship("Address", back_populates="comments")
     user = relationship("User", back_populates="comments")
+    unit = relationship("Unit", back_populates="comments")  # Add relationship to Unit
 
 # Concerns
 class Concern(Base):
