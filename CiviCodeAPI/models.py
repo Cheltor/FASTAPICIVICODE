@@ -286,6 +286,7 @@ class Unit(Base):
 
     # Relationships
     areas = relationship("Area", back_populates="unit")  # Unit has many Areas
+    comments = relationship("Comment", back_populates="unit")  # Unit has many Comments
 
 # InspectionCodes
 class InspectionCode(Base):

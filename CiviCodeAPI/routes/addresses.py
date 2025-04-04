@@ -1,11 +1,12 @@
 from fastapi import APIRouter, HTTPException, Depends, Query
 from sqlalchemy.orm import Session
 from typing import List
-from models import Address, Comment, Violation, Inspection, Unit
+from models import Address, Comment, Violation, Inspection, Unit, ActiveStorageAttachment, ActiveStorageBlob
 from schemas import AddressCreate, AddressResponse, CommentResponse, ViolationResponse, InspectionResponse, ViolationCreate, CommentCreate, InspectionCreate, UnitResponse, UnitCreate
 from database import get_db  # Assuming a get_db function is set up to provide the database session
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
+from storage import blob_service_client, CONTAINER_NAME
 
 # Create a router instance
 router = APIRouter()
@@ -303,3 +304,28 @@ def get_units_by_address_id(address_id: int, db: Session = Depends(get_db)):
     if not units:
         raise HTTPException(status_code=404, detail="No units found for this address")
     return units
+
+# Get all photos from comments for a specific address
+@router.get("/addresses/{address_id}/photos", response_model=List[dict])
+def get_address_photos(address_id: int, db: Session = Depends(get_db)):
+    # Query the comments for the given address ID
+    comments = db.query(Comment).filter(Comment.address_id == address_id).all()
+    if not comments:
+        raise HTTPException(status_code=404, detail="No comments found for this address")
+
+    # Collect all photo URLs from the comments
+    photos = []
+    for comment in comments:
+        attachments = db.query(ActiveStorageAttachment).filter_by(
+            record_id=comment.id, record_type='Comment', name='photos'
+        ).all()
+        for attachment in attachments:
+            blob = db.query(ActiveStorageBlob).filter_by(id=attachment.blob_id).first()
+            if blob:
+                photos.append({
+                    "filename": blob.filename,
+                    "content_type": blob.content_type,
+                    "url": f"https://{blob_service_client.account_name}.blob.core.windows.net/{CONTAINER_NAME}/{blob.key}"
+                })
+
+    return photos
