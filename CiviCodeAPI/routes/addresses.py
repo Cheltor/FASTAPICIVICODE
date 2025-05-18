@@ -72,7 +72,13 @@ def update_address(address_id: int, address: AddressCreate, db: Session = Depend
 # Delete an address
 @router.delete("/addresses/{address_id}", response_model=AddressResponse)
 def delete_address(address_id: int, db: Session = Depends(get_db)):
-    address = db.query
+    address = db.query(Address).filter(Address.id == address_id).first()
+    if not address:
+        raise HTTPException(status_code=404, detail="Address not found")
+    
+    db.delete(address)
+    db.commit()
+    return address
 
 # Show the comments for the address
 @router.get("/addresses/{address_id}/comments", response_model=List[CommentResponse])
@@ -220,7 +226,7 @@ def add_address_inspection(address_id: int, inspection: InspectionResponse, db: 
     db.add(new_inspection)
     db.commit()
     db.refresh(new_inspection)
-    return
+    return new_inspection
 
 # Update an inspection for the address
 @router.put("/addresses/{address_id}/inspections/{inspection_id}", response_model=InspectionResponse)
