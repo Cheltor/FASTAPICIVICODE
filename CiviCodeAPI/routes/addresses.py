@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends, Query
 from sqlalchemy.orm import Session
 from typing import List
 from models import Address, Comment, Violation, Inspection, Unit, ActiveStorageAttachment, ActiveStorageBlob
+import models
 from schemas import AddressCreate, AddressResponse, CommentResponse, ViolationResponse, InspectionResponse, ViolationCreate, CommentCreate, InspectionCreate, UnitResponse, UnitCreate
 from database import get_db  # Assuming a get_db function is set up to provide the database session
 from sqlalchemy import or_
@@ -148,17 +149,28 @@ def get_address_violations(address_id: int, db: Session = Depends(get_db)):
     return violations
 
 # Add a violation to the address
+
 @router.post("/addresses/{address_id}/violations", response_model=ViolationResponse)
-def add_address_violation(address_id: int, violation: ViolationResponse, db: Session = Depends(get_db)):
+def add_address_violation(address_id: int, violation: ViolationCreate, db: Session = Depends(get_db)):
     # Check if the address exists
     address = db.query(Address).filter(Address.id == address_id).first()
     if not address:
         raise HTTPException(status_code=404, detail="Address not found")
-    
-    # Create a new violation
-    new_violation = Violation(**violation.dict(), address_id=address_id)
+
+    violation_data = violation.dict(exclude={"codes"})
+    violation_data["address_id"] = address_id
+    if not violation_data.get("violation_type"):
+        violation_data["violation_type"] = "doorhanger"
+    if not violation_data.get("status"):
+        violation_data["status"] = 0
+    new_violation = Violation(**violation_data)
     db.add(new_violation)
     db.commit()
+    # Associate codes if provided
+    if violation.codes:
+        codes = db.query(models.Code).filter(models.Code.id.in_(violation.codes)).all()
+        new_violation.codes = codes
+        db.commit()
     db.refresh(new_violation)
     return new_violation
 
