@@ -1,7 +1,14 @@
+
 from pydantic import BaseModel, validator
 from typing import Optional, List
 from datetime import datetime, date
 from constants import DEADLINE_OPTIONS, DEADLINE_VALUES
+
+# Ensure CodeResponse is defined before ViolationResponse
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .schemas import CodeResponse
 
 # Pydantic schema for address
 class AddressCreate(BaseModel):
@@ -131,7 +138,7 @@ class ViolationBase(BaseModel):
         return value
 
 class ViolationCreate(ViolationBase):
-    pass
+    codes: Optional[List[int]] = None  # Accept a list of code IDs when creating
 
 class ViolationResponse(ViolationBase):
     id: int
@@ -139,6 +146,7 @@ class ViolationResponse(ViolationBase):
     updated_at: datetime
     combadd: Optional[str] = None
     deadline_date: Optional[datetime]  # Include the deadline date in the response
+    codes: Optional[List['CodeResponse']] = None
 
 
     class Config:

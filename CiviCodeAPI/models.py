@@ -213,6 +213,11 @@ class Code(Base):
 
     # Relationships
     citations = relationship("Citation", back_populates="code") # citations have one code
+    violations = relationship(
+        "Violation",
+        secondary="violation_codes",
+        back_populates="codes"
+    )
 
 # Comments
 class Comment(Base):
@@ -541,6 +546,11 @@ class Violation(Base):
     # Relationships
     address = relationship("Address", back_populates="violations") # Violation belongs to an Address
     citations = relationship("Citation", back_populates="violation") # Violation has many Citations
+    codes = relationship(
+        "Code",
+        secondary="violation_codes",
+        back_populates="violations"
+    )
 
     def deadline_passed(self) -> bool:
         """Determine if the deadline has passed."""
