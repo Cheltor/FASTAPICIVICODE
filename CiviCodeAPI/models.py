@@ -521,6 +521,9 @@ class ViolationComment(Base):
     created_at = Column(DateTime, default=func.now(), nullable=False)  # Auto-generate created_at timestamp
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)  # Auto-update updated_at timestamp
 
+    # Relationship to User
+    user = relationship("User", backref="violation_comments")
+
 
 # Violations
 class Violation(Base):
@@ -551,6 +554,7 @@ class Violation(Base):
         secondary="violation_codes",
         back_populates="violations"
     )
+    violation_comments = relationship("ViolationComment", backref="violation", cascade="all, delete-orphan") # Violation has many ViolationComments
 
     def deadline_passed(self) -> bool:
         """Determine if the deadline has passed."""

@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session, joinedload
 from typing import List
 from models import Violation, Citation
-from schemas import ViolationCreate, ViolationResponse, CitationResponse
+import schemas
 from database import get_db
 from sqlalchemy import desc
 import models
@@ -10,7 +10,7 @@ import models
 router = APIRouter()
 
 # Get all violations
-@router.get("/violations/", response_model=List[ViolationResponse])
+@router.get("/violations/", response_model=List[schemas.ViolationResponse])
 def get_violations(skip: int = 0, db: Session = Depends(get_db)):
     violations = (
         db.query(Violation)
@@ -31,8 +31,8 @@ def get_violations(skip: int = 0, db: Session = Depends(get_db)):
     return response
 
 # Create a new violation
-@router.post("/violations/", response_model=ViolationResponse)
-def create_violation(violation: ViolationCreate, db: Session = Depends(get_db)):
+@router.post("/violations/", response_model=schemas.ViolationResponse)
+def create_violation(violation: schemas.ViolationCreate, db: Session = Depends(get_db)):
     violation_data = violation.dict(exclude={"codes"})
     # Ensure violation_type is set, default to "doorhanger" if not provided
     if not violation_data.get("violation_type"):
@@ -52,7 +52,7 @@ def create_violation(violation: ViolationCreate, db: Session = Depends(get_db)):
     return new_violation
 
 # Get a specific violation by ID
-@router.get("/violation/{violation_id}", response_model=ViolationResponse)
+@router.get("/violation/{violation_id}", response_model=schemas.ViolationResponse)
 def get_violation(violation_id: int, db: Session = Depends(get_db)):
     violation = (
         db.query(Violation)
@@ -67,11 +67,24 @@ def get_violation(violation_id: int, db: Session = Depends(get_db)):
     violation_dict['combadd'] = violation.address.combadd if violation.address else None
     violation_dict['deadline_date'] = violation.deadline_date  # Access computed property
     violation_dict['codes'] = violation.codes
+    # Add violation_comments to the response
+    violation_dict['violation_comments'] = [
+        {
+            'id': vc.id,
+            'content': vc.content,
+            'user_id': vc.user_id,
+            'violation_id': vc.violation_id,
+            'created_at': vc.created_at,
+            'updated_at': vc.updated_at,
+            'user': schemas.UserResponse.from_orm(vc.user) if getattr(vc, 'user', None) else None
+        }
+        for vc in violation.violation_comments
+    ] if hasattr(violation, 'violation_comments') else []
     return violation_dict
 
 
 # Get all violations for a specific Address
-@router.get("/violations/address/{address_id}", response_model=List[ViolationResponse])
+@router.get("/violations/address/{address_id}", response_model=List[schemas.ViolationResponse])
 def get_violations_by_address(address_id: int, db: Session = Depends(get_db)):
     violations = db.query(Violation).options(joinedload(Violation.codes)).filter(Violation.address_id == address_id).all()
     # Add codes and deadline_date to the response
@@ -84,7 +97,7 @@ def get_violations_by_address(address_id: int, db: Session = Depends(get_db)):
     return response
 
 # Show all citations for a specific Violation
-@router.get("/violation/{violation_id}/citations", response_model=List[CitationResponse])
+@router.get("/violation/{violation_id}/citations", response_model=List[schemas.CitationResponse])
 def get_citations_by_violation(violation_id: int, db: Session = Depends(get_db)):
     citations = (
         db.query(Citation)
@@ -105,3 +118,32 @@ def get_citations_by_violation(violation_id: int, db: Session = Depends(get_db))
         response.append(citation_dict)
     
     return response
+
+# Add a comment to a violation
+@router.post("/violation/{violation_id}/comments", response_model=schemas.ViolationCommentResponse)
+def add_violation_comment(violation_id: int, comment: schemas.ViolationCommentCreate, db: Session = Depends(get_db)):
+    # Ensure violation exists
+    violation = db.query(models.Violation).filter(models.Violation.id == violation_id).first()
+    if not violation:
+        raise HTTPException(status_code=404, detail="Violation not found")
+    # Create new comment
+    new_comment = models.ViolationComment(
+        content=comment.content,
+        user_id=comment.user_id,
+        violation_id=violation_id
+    )
+    db.add(new_comment)
+    db.commit()
+    db.refresh(new_comment)
+    # Optionally, fetch user info for response
+    user = db.query(models.User).filter(models.User.id == new_comment.user_id).first()
+    user_response = schemas.UserResponse.from_orm(user) if user else None
+    return schemas.ViolationCommentResponse(
+        id=new_comment.id,
+        content=new_comment.content,
+        user_id=new_comment.user_id,
+        violation_id=new_comment.violation_id,
+        created_at=new_comment.created_at,
+        updated_at=new_comment.updated_at,
+        user=user_response
+    )

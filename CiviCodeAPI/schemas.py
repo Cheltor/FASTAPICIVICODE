@@ -1,4 +1,3 @@
-
 from pydantic import BaseModel, validator
 from typing import Optional, List
 from datetime import datetime, date
@@ -69,11 +68,11 @@ class UserResponse(UserBase):
     created_at: datetime
     updated_at: datetime
 
-class UserUpdate(UserBase):
-    password: Optional[str] = None
-
     class Config:
         from_attributes = True
+
+class UserUpdate(UserBase):
+    password: Optional[str] = None
 
 # Pydantic schema for Business
 class BusinessBase(BaseModel):
@@ -147,7 +146,7 @@ class ViolationResponse(ViolationBase):
     combadd: Optional[str] = None
     deadline_date: Optional[datetime]  # Include the deadline date in the response
     codes: Optional[List['CodeResponse']] = None
-
+    violation_comments: Optional[List['ViolationCommentResponse']] = None
 
     class Config:
         from_attributes = True
@@ -393,5 +392,22 @@ class ObservationResponse(ObservationBase):
     created_at: datetime
     updated_at: datetime
 
+    class Config:
+        from_attributes = True
+
+# ViolationComment schemas
+class ViolationCommentBase(BaseModel):
+    content: str
+    user_id: int
+    violation_id: int
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+class ViolationCommentCreate(ViolationCommentBase):
+    pass
+
+class ViolationCommentResponse(ViolationCommentBase):
+    id: int
+    user: Optional[UserResponse] = None
     class Config:
         from_attributes = True
