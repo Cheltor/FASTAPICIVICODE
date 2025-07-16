@@ -1,3 +1,4 @@
+
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session, joinedload
 from typing import List
@@ -147,3 +148,57 @@ def add_violation_comment(violation_id: int, comment: schemas.ViolationCommentCr
         updated_at=new_comment.updated_at,
         user=user_response
     )
+
+# Abate (close) a violation
+@router.post("/violation/{violation_id}/abate", response_model=schemas.ViolationResponse)
+def abate_violation(violation_id: int, db: Session = Depends(get_db)):
+    violation = db.query(models.Violation).filter(models.Violation.id == violation_id).first()
+    if not violation:
+        raise HTTPException(status_code=404, detail="Violation not found")
+    violation.status = 1  # 1 = Resolved/Closed
+    db.commit()
+    db.refresh(violation)
+    violation_dict = violation.__dict__.copy()
+    violation_dict['combadd'] = violation.address.combadd if violation.address else None
+    violation_dict['deadline_date'] = violation.deadline_date
+    violation_dict['codes'] = violation.codes
+    violation_dict['violation_comments'] = [
+        {
+            'id': vc.id,
+            'content': vc.content,
+            'user_id': vc.user_id,
+            'violation_id': vc.violation_id,
+            'created_at': vc.created_at,
+            'updated_at': vc.updated_at,
+            'user': schemas.UserResponse.from_orm(vc.user) if getattr(vc, 'user', None) else None
+        }
+        for vc in violation.violation_comments
+    ] if hasattr(violation, 'violation_comments') else []
+    return violation_dict
+
+# Reopen a violation (set status back to current)
+@router.post("/violation/{violation_id}/reopen", response_model=schemas.ViolationResponse)
+def reopen_violation(violation_id: int, db: Session = Depends(get_db)):
+    violation = db.query(models.Violation).filter(models.Violation.id == violation_id).first()
+    if not violation:
+        raise HTTPException(status_code=404, detail="Violation not found")
+    violation.status = 0  # 0 = Current/Open
+    db.commit()
+    db.refresh(violation)
+    violation_dict = violation.__dict__.copy()
+    violation_dict['combadd'] = violation.address.combadd if violation.address else None
+    violation_dict['deadline_date'] = violation.deadline_date
+    violation_dict['codes'] = violation.codes
+    violation_dict['violation_comments'] = [
+        {
+            'id': vc.id,
+            'content': vc.content,
+            'user_id': vc.user_id,
+            'violation_id': vc.violation_id,
+            'created_at': vc.created_at,
+            'updated_at': vc.updated_at,
+            'user': schemas.UserResponse.from_orm(vc.user) if getattr(vc, 'user', None) else None
+        }
+        for vc in violation.violation_comments
+    ] if hasattr(violation, 'violation_comments') else []
+    return violation_dict
