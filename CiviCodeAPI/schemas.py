@@ -203,6 +203,7 @@ class CitationResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     combadd: Optional[str] = None  # Add combadd attribute
+    user: Optional[UserResponse] = None  # Add user to response
 
     class Config:
         from_attributes = True

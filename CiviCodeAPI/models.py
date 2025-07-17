@@ -178,6 +178,7 @@ class Citation(Base):
     violation = relationship("Violation", back_populates="citations") # Citation belongs to a Violation
     # citation has one code 
     code = relationship("Code", back_populates="citations")
+    user = relationship("User")  # Add this line to enable joinedload and access to user
 
 # CitationsCodes (join table for Many-to-Many relationships)
 class CitationCode(Base):
@@ -555,6 +556,7 @@ class Violation(Base):
         back_populates="violations"
     )
     violation_comments = relationship("ViolationComment", backref="violation", cascade="all, delete-orphan") # Violation has many ViolationComments
+    user = relationship("User")  # Add this line to enable joinedload and access to user
 
     def deadline_passed(self) -> bool:
         """Determine if the deadline has passed."""

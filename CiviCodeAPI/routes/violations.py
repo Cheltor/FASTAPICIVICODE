@@ -58,7 +58,11 @@ def get_violation(violation_id: int, db: Session = Depends(get_db)):
     violation = (
         db.query(Violation)
         .filter(Violation.id == violation_id)
-        .options(joinedload(Violation.address), joinedload(Violation.codes))  # Eagerly load Address and Codes
+        .options(
+            joinedload(Violation.address),
+            joinedload(Violation.codes),
+            joinedload(Violation.user)  # Eagerly load the user relationship
+        )
         .first()
     )
     if not violation:
@@ -68,6 +72,8 @@ def get_violation(violation_id: int, db: Session = Depends(get_db)):
     violation_dict['combadd'] = violation.address.combadd if violation.address else None
     violation_dict['deadline_date'] = violation.deadline_date  # Access computed property
     violation_dict['codes'] = violation.codes
+    # Add user to the response
+    violation_dict['user'] = schemas.UserResponse.from_orm(violation.user) if getattr(violation, 'user', None) else None
     # Add violation_comments to the response
     violation_dict['violation_comments'] = [
         {
@@ -104,20 +110,21 @@ def get_citations_by_violation(violation_id: int, db: Session = Depends(get_db))
         db.query(Citation)
         .options(
             joinedload(Citation.violation).joinedload(Violation.address),
-            joinedload(Citation.code)  # Eagerly load the Code relationship
+            joinedload(Citation.code),
+            joinedload(Citation.user)  # Eagerly load the User relationship
         )
         .filter(Citation.violation_id == violation_id)
         .all()
     )
-    
-    # Add combadd and code.name to the response
+
+    # Add combadd, code_name, and user to the response
     response = []
     for citation in citations:
-        citation_dict = citation.__dict__
-        citation_dict['combadd'] = citation.violation.address.combadd
+        citation_dict = citation.__dict__.copy()
+        citation_dict['combadd'] = citation.violation.address.combadd if citation.violation and citation.violation.address else None
         citation_dict['code_name'] = citation.code.name if citation.code else None
+        citation_dict['user'] = schemas.UserResponse.from_orm(citation.user) if getattr(citation, 'user', None) else None
         response.append(citation_dict)
-    
     return response
 
 # Add a comment to a violation
@@ -152,7 +159,7 @@ def add_violation_comment(violation_id: int, comment: schemas.ViolationCommentCr
 # Abate (close) a violation
 @router.post("/violation/{violation_id}/abate", response_model=schemas.ViolationResponse)
 def abate_violation(violation_id: int, db: Session = Depends(get_db)):
-    violation = db.query(models.Violation).filter(models.Violation.id == violation_id).first()
+    violation = db.query(models.Violation).options(joinedload(models.Violation.user)).filter(models.Violation.id == violation_id).first()
     if not violation:
         raise HTTPException(status_code=404, detail="Violation not found")
     violation.status = 1  # 1 = Resolved/Closed
@@ -162,6 +169,7 @@ def abate_violation(violation_id: int, db: Session = Depends(get_db)):
     violation_dict['combadd'] = violation.address.combadd if violation.address else None
     violation_dict['deadline_date'] = violation.deadline_date
     violation_dict['codes'] = violation.codes
+    violation_dict['user'] = schemas.UserResponse.from_orm(violation.user) if getattr(violation, 'user', None) else None
     violation_dict['violation_comments'] = [
         {
             'id': vc.id,
@@ -179,7 +187,7 @@ def abate_violation(violation_id: int, db: Session = Depends(get_db)):
 # Reopen a violation (set status back to current)
 @router.post("/violation/{violation_id}/reopen", response_model=schemas.ViolationResponse)
 def reopen_violation(violation_id: int, db: Session = Depends(get_db)):
-    violation = db.query(models.Violation).filter(models.Violation.id == violation_id).first()
+    violation = db.query(models.Violation).options(joinedload(models.Violation.user)).filter(models.Violation.id == violation_id).first()
     if not violation:
         raise HTTPException(status_code=404, detail="Violation not found")
     violation.status = 0  # 0 = Current/Open
@@ -189,6 +197,7 @@ def reopen_violation(violation_id: int, db: Session = Depends(get_db)):
     violation_dict['combadd'] = violation.address.combadd if violation.address else None
     violation_dict['deadline_date'] = violation.deadline_date
     violation_dict['codes'] = violation.codes
+    violation_dict['user'] = schemas.UserResponse.from_orm(violation.user) if getattr(violation, 'user', None) else None
     violation_dict['violation_comments'] = [
         {
             'id': vc.id,

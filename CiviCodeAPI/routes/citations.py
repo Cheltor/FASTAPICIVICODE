@@ -1,11 +1,30 @@
-from fastapi import APIRouter, HTTPException, Depends
+
+from fastapi import APIRouter, HTTPException, Depends, Body
 from sqlalchemy.orm import Session, joinedload
 from typing import List
-from models import Citation, Violation
+from models import Citation, Violation, Code
 from schemas import CitationCreate, CitationResponse, ViolationResponse
 from database import get_db
 
 router = APIRouter()
+
+# PATCH endpoint to update citation status (and other fields if needed)
+@router.patch("/citations/{citation_id}", response_model=CitationResponse)
+def update_citation_status(citation_id: int, data: dict = Body(...), db: Session = Depends(get_db)):
+    citation = db.query(Citation).filter(Citation.id == citation_id).first()
+    if not citation:
+        raise HTTPException(status_code=404, detail="Citation not found")
+    # Only update fields that are present in the request
+    if "status" in data:
+        citation.status = data["status"]
+    # Add more fields here if you want to allow editing them
+    db.commit()
+    db.refresh(citation)
+    # Optionally add code_name to response if needed
+    code = db.query(Code).filter(Code.id == citation.code_id).first()
+    citation_dict = citation.__dict__.copy()
+    citation_dict['code_name'] = code.name if code else None
+    return citation_dict
 
 # Get all citations
 @router.get("/citations/", response_model=List[CitationResponse])
@@ -36,7 +55,11 @@ def create_citation(citation: CitationCreate, db: Session = Depends(get_db)):
     db.add(new_citation)
     db.commit()
     db.refresh(new_citation)
-    return new_citation
+    # Fetch code name for response
+    code = db.query(Code).filter(Code.id == new_citation.code_id).first()
+    citation_dict = new_citation.__dict__.copy()
+    citation_dict['code_name'] = code.name if code else None
+    return citation_dict
 
 # Get a specific citation by ID
 @router.get("/citations/{citation_id}", response_model=CitationResponse)
