@@ -67,7 +67,11 @@ def get_citation(citation_id: int, db: Session = Depends(get_db)):
     citation = db.query(Citation).filter(Citation.id == citation_id).first()
     if not citation:
         raise HTTPException(status_code=404, detail="Citation not found")
-    return citation
+    # Fetch code name for response
+    code = db.query(Code).filter(Code.id == citation.code_id).first()
+    citation_dict = citation.__dict__.copy()
+    citation_dict['code_name'] = code.name if code else None
+    return citation_dict
 
 @router.get("/citations/address/{address_id}", response_model=List[CitationResponse])
 def get_citations_by_address(address_id: int, db: Session = Depends(get_db)):
