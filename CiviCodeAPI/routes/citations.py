@@ -24,6 +24,12 @@ def update_citation_status(citation_id: int, data: dict = Body(...), db: Session
     code = db.query(Code).filter(Code.id == citation.code_id).first()
     citation_dict = citation.__dict__.copy()
     citation_dict['code_name'] = code.name if code else None
+    # Add combadd if possible
+    violation = citation.violation
+    if violation and hasattr(violation, 'address') and violation.address:
+        citation_dict['combadd'] = violation.address.combadd
+    else:
+        citation_dict['combadd'] = None
     return citation_dict
 
 # Get all citations
@@ -38,14 +44,26 @@ def get_citations(skip: int = 0, db: Session = Depends(get_db)):
         .offset(skip)
         .all()
     )
-    
-    # Add combadd to the response
+
+    # Build nested response with violation.address.combadd
     response = []
     for citation in citations:
-        citation_dict = citation.__dict__
-        citation_dict['combadd'] = citation.violation.address.combadd
+        citation_dict = citation.__dict__.copy()
+        # Attach nested violation and address with combadd
+        violation = citation.violation
+        if violation and violation.address:
+            citation_dict['violation'] = {
+                'id': violation.id,
+                'address': {
+                    'id': violation.address.id,
+                    'combadd': violation.address.combadd
+                }
+            }
+            # For convenience, also add combadd at the top level
+            citation_dict['combadd'] = violation.address.combadd
+        else:
+            citation_dict['combadd'] = None
         response.append(citation_dict)
-    
     return response
 
 # Create a new citation
@@ -59,6 +77,12 @@ def create_citation(citation: CitationCreate, db: Session = Depends(get_db)):
     code = db.query(Code).filter(Code.id == new_citation.code_id).first()
     citation_dict = new_citation.__dict__.copy()
     citation_dict['code_name'] = code.name if code else None
+    # Add combadd if possible
+    violation = new_citation.violation
+    if violation and hasattr(violation, 'address') and violation.address:
+        citation_dict['combadd'] = violation.address.combadd
+    else:
+        citation_dict['combadd'] = None
     return citation_dict
 
 # Get a specific citation by ID
@@ -71,6 +95,12 @@ def get_citation(citation_id: int, db: Session = Depends(get_db)):
     code = db.query(Code).filter(Code.id == citation.code_id).first()
     citation_dict = citation.__dict__.copy()
     citation_dict['code_name'] = code.name if code else None
+    # Add combadd if possible
+    violation = citation.violation
+    if violation and hasattr(violation, 'address') and violation.address:
+        citation_dict['combadd'] = violation.address.combadd
+    else:
+        citation_dict['combadd'] = None
     return citation_dict
 
 @router.get("/citations/address/{address_id}", response_model=List[CitationResponse])
