@@ -1,6 +1,6 @@
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query, Body
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from models import Address, Comment, Violation, Inspection, Unit, ActiveStorageAttachment, ActiveStorageBlob
 import models
 from schemas import AddressCreate, AddressResponse, CommentResponse, ViolationResponse, InspectionResponse, ViolationCreate, CommentCreate, InspectionCreate, UnitResponse, UnitCreate
@@ -37,6 +37,13 @@ def search_addresses(
         .limit(limit)
         .all()
     )
+    return addresses
+
+
+# Get addresses by vacancy status (for potentially vacant, registered, and vacant)
+@router.get("/addresses/by-vacancy-status", response_model=List[AddressResponse])
+def get_addresses_by_vacancy_status(db: Session = Depends(get_db)):
+    addresses = db.query(Address).filter(Address.vacancy_status != "occupied").all()
     return addresses
 
 # Get a single address by ID
@@ -79,6 +86,19 @@ def delete_address(address_id: int, db: Session = Depends(get_db)):
     
     db.delete(address)
     db.commit()
+    return address
+
+# PATCH route to update only the vacancy_status of an address
+@router.patch("/addresses/{address_id}/vacancy-status", response_model=AddressResponse)
+def update_vacancy_status(address_id: int, data: dict = Body(...), db: Session = Depends(get_db)):
+    address = db.query(Address).filter(Address.id == address_id).first()
+    if not address:
+        raise HTTPException(status_code=404, detail="Address not found")
+    if "vacancy_status" not in data:
+        raise HTTPException(status_code=400, detail="Missing vacancy_status")
+    address.vacancy_status = data["vacancy_status"]
+    db.commit()
+    db.refresh(address)
     return address
 
 # Show the comments for the address
@@ -347,3 +367,5 @@ def get_address_photos(address_id: int, db: Session = Depends(get_db)):
                 })
 
     return photos
+
+## Removed duplicate /addresses/by-vacancy-status endpoint definition (already defined above)
