@@ -1,4 +1,7 @@
-from fastapi import APIRouter, HTTPException, Depends
+
+
+from datetime import date
+from fastapi import APIRouter, HTTPException, Depends, Body
 from sqlalchemy.orm import Session, joinedload
 from typing import List
 from models import Violation, Citation
@@ -8,6 +11,17 @@ from sqlalchemy import desc
 import models
 
 router = APIRouter()
+
+# Extend deadline for a violation
+@router.patch("/violation/{violation_id}/deadline", response_model=schemas.ViolationResponse)
+def extend_violation_deadline(violation_id: int, extend: int = Body(..., embed=True), db: Session = Depends(get_db)):
+    violation = db.query(models.Violation).filter(models.Violation.id == violation_id).first()
+    if not violation:
+        raise HTTPException(status_code=404, detail="Violation not found")
+    violation.extend = extend
+    db.commit()
+    db.refresh(violation)
+    return violation
 
 # Get all violations
 @router.get("/violations/", response_model=List[schemas.ViolationResponse])
