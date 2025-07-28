@@ -1,4 +1,3 @@
-
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session, joinedload
 from typing import List
@@ -15,19 +14,23 @@ router = APIRouter()
 def get_violations(skip: int = 0, db: Session = Depends(get_db)):
     violations = (
         db.query(Violation)
-        .options(joinedload(Violation.address), joinedload(Violation.codes))  # Eagerly load Address and Codes
+        .options(
+            joinedload(Violation.address),
+            joinedload(Violation.codes),
+            joinedload(Violation.user)  # Eagerly load User relationship
+        )
         .order_by(desc(Violation.created_at))
         .offset(skip)
         .all()
     )
 
-    # Add combadd and codes to the response
     response = []
     for violation in violations:
         violation_dict = violation.__dict__.copy()
         violation_dict['combadd'] = violation.address.combadd if violation.address else None
-        violation_dict['deadline_date'] = violation.deadline_date  # Directly access the computed property
+        violation_dict['deadline_date'] = violation.deadline_date
         violation_dict['codes'] = violation.codes
+        violation_dict['user'] = schemas.UserResponse.from_orm(violation.user) if getattr(violation, 'user', None) else None
         response.append(violation_dict)
     return response
 
@@ -70,11 +73,9 @@ def get_violation(violation_id: int, db: Session = Depends(get_db)):
     # Add combadd and codes to the response
     violation_dict = violation.__dict__.copy()
     violation_dict['combadd'] = violation.address.combadd if violation.address else None
-    violation_dict['deadline_date'] = violation.deadline_date  # Access computed property
+    violation_dict['deadline_date'] = violation.deadline_date
     violation_dict['codes'] = violation.codes
-    # Add user to the response
     violation_dict['user'] = schemas.UserResponse.from_orm(violation.user) if getattr(violation, 'user', None) else None
-    # Add violation_comments to the response
     violation_dict['violation_comments'] = [
         {
             'id': vc.id,
@@ -88,6 +89,9 @@ def get_violation(violation_id: int, db: Session = Depends(get_db)):
         for vc in violation.violation_comments
     ] if hasattr(violation, 'violation_comments') else []
     return violation_dict
+
+    print("violation.user:", violation.user)
+    print("violation_dict['user']:", violation_dict.get('user'))
 
 
 # Get all violations for a specific Address
@@ -211,3 +215,4 @@ def reopen_violation(violation_id: int, db: Session = Depends(get_db)):
         for vc in violation.violation_comments
     ] if hasattr(violation, 'violation_comments') else []
     return violation_dict
+

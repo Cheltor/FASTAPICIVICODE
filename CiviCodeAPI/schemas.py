@@ -147,6 +147,7 @@ class ViolationResponse(ViolationBase):
     deadline_date: Optional[datetime]  # Include the deadline date in the response
     codes: Optional[List['CodeResponse']] = None
     violation_comments: Optional[List['ViolationCommentResponse']] = None
+    user: Optional[UserResponse] = None  # <-- Add this line
 
     class Config:
         from_attributes = True

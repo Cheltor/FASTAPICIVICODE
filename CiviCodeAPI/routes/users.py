@@ -31,6 +31,12 @@ def get_users(skip: int = 0, db: Session = Depends(get_db)):
     users = db.query(User).offset(skip).all()
     return users
 
+# Get users by ONS
+@router.get("/users/ons/", response_model=List[UserResponse])
+def get_ons_users(db: Session = Depends(get_db)):
+    users = db.query(User).filter(User.role == 1).all()
+    return users
+
 # login
 @router.post("/login")
 async def login(
