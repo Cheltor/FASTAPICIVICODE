@@ -368,4 +368,20 @@ def get_address_photos(address_id: int, db: Session = Depends(get_db)):
 
     return photos
 
-## Removed duplicate /addresses/by-vacancy-status endpoint definition (already defined above)
+# PATCH route to update a unit number (ensure uniqueness)
+@router.patch("/units/{unit_id}", response_model=UnitResponse)
+def update_unit_number(unit_id: int, data: dict = Body(...), db: Session = Depends(get_db)):
+    unit = db.query(Unit).filter(Unit.id == unit_id).first()
+    if not unit:
+        raise HTTPException(status_code=404, detail="Unit not found")
+    new_number = data.get("number")
+    if not new_number:
+        raise HTTPException(status_code=400, detail="Missing unit number")
+    # Check for duplicate number for this address (exclude self)
+    duplicate = db.query(Unit).filter(Unit.address_id == unit.address_id, Unit.number == new_number, Unit.id != unit_id).first()
+    if duplicate:
+        raise HTTPException(status_code=400, detail="Unit number already exists for this address.")
+    unit.number = new_number
+    db.commit()
+    db.refresh(unit)
+    return unit
