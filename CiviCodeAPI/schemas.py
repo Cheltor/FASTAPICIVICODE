@@ -156,6 +156,7 @@ class ViolationResponse(ViolationBase):
 class CommentBase(BaseModel):
     content: str
     user_id: int
+    address_id: int  # Address ID is required
     unit_id: Optional[int] = None  # Unit ID is optional
 
 # Schema for creating a new comment (doesn't include id, created_at, updated_at)
@@ -167,11 +168,11 @@ class CommentResponse(CommentBase):
     id: int
     content: str
     user_id: int
+    address_id: int
     user: UserResponse  # Include the user response here for returning full user data
     unit_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime
-
 
     class Config:
         from_attributes = True  # This allows returning ORM models as dicts

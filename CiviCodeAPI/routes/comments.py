@@ -50,6 +50,7 @@ def get_comments_by_address(address_id: int, db: Session = Depends(get_db)):
             id=comment.id,
             content=comment.content,
             user_id=comment.user_id,
+            address_id=comment.address_id,  # <-- Ensure address_id is included
             user=UserResponse(
                 id=user.id,
                 name=user.name,
@@ -142,8 +143,9 @@ def create_contact_comment(contact_id: int, comment: ContactCommentCreate, db: S
 @router.get("/comments/unit/{unit_id}", response_model=List[CommentResponse])
 def get_comments_by_unit(unit_id: int, db: Session = Depends(get_db)):
     comments = db.query(Comment).filter(Comment.unit_id == unit_id).order_by(Comment.created_at.desc()).all()
+    # Return empty list if no comments
     if not comments:
-        raise HTTPException(status_code=404, detail="Comments not found for this unit")
+        return []
     unit = db.query(Unit).filter(Unit.id == unit_id).first()
     comment_responses = []
     for comment in comments:
@@ -154,6 +156,7 @@ def get_comments_by_unit(unit_id: int, db: Session = Depends(get_db)):
             id=comment.id,
             content=comment.content,
             user_id=comment.user_id,
+            address_id=comment.address_id,  # <-- Ensure address_id is included
             user=UserResponse(
                 id=user.id,
                 name=user.name,
