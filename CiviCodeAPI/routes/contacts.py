@@ -9,10 +9,24 @@ from sqlalchemy import or_
 
 router = APIRouter()
 
-# Get all contacts
+# Get all contacts, with optional search
 @router.get("/contacts/", response_model=List[ContactResponse])
-def get_contacts(skip: int = 0, db: Session = Depends(get_db)):
-    contacts = db.query(Contact).offset(skip).all()
+def get_contacts(
+    skip: int = 0,
+    search: str = Query(None, description="Search term for contact name, email, or phone"),
+    db: Session = Depends(get_db)
+):
+    query = db.query(Contact)
+    if search and search.strip():
+        like = f"%{search}%"
+        query = query.filter(
+            or_(
+                Contact.name.ilike(like),
+                Contact.email.ilike(like),
+                Contact.phone.ilike(like)
+            )
+        )
+    contacts = query.offset(skip).all()
     return contacts
 
 # Create a new contact

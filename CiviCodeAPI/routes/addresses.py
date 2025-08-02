@@ -1,16 +1,68 @@
+
 from fastapi import APIRouter, HTTPException, Depends, Query, Body
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from models import Address, Comment, Violation, Inspection, Unit, ActiveStorageAttachment, ActiveStorageBlob
-import models
-from schemas import AddressCreate, AddressResponse, CommentResponse, ViolationResponse, InspectionResponse, ViolationCreate, CommentCreate, InspectionCreate, UnitResponse, UnitCreate
-from database import get_db  # Assuming a get_db function is set up to provide the database session
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from storage import blob_service_client, CONTAINER_NAME
+from database import get_db  # Ensure get_db is imported before use
+from models import Address, Comment, Violation, Inspection, Unit, ActiveStorageAttachment, ActiveStorageBlob, Contact, AddressContact
+import models
+from schemas import AddressCreate, AddressResponse, CommentResponse, ViolationResponse, InspectionResponse, ViolationCreate, CommentCreate, InspectionCreate, UnitResponse, UnitCreate, ContactResponse, ContactCreate
 
-# Create a router instance
 router = APIRouter()
+
+# Get all contacts for an address
+@router.get("/addresses/{address_id}/contacts", response_model=List[ContactResponse])
+def get_address_contacts(address_id: int, db: Session = Depends(get_db)):
+    address = db.query(Address).filter(Address.id == address_id).first()
+    if not address:
+        raise HTTPException(status_code=404, detail="Address not found")
+    return address.contacts
+
+# Add a contact (existing or new) to an address
+@router.post("/addresses/{address_id}/contacts", response_model=List[ContactResponse])
+def add_address_contact(address_id: int, contact: dict = Body(...), db: Session = Depends(get_db)):
+    address = db.query(Address).filter(Address.id == address_id).first()
+    if not address:
+        raise HTTPException(status_code=404, detail="Address not found")
+    contact_id = contact.get("contact_id")
+    if contact_id:
+        # Add existing contact
+        contact_obj = db.query(Contact).filter(Contact.id == contact_id).first()
+        if not contact_obj:
+            raise HTTPException(status_code=404, detail="Contact not found")
+    else:
+        # Create new contact
+        contact_obj = Contact(
+            name=contact.get("name"),
+            email=contact.get("email"),
+            phone=contact.get("phone")
+        )
+        db.add(contact_obj)
+        db.commit()
+        db.refresh(contact_obj)
+    # Check for existing association
+    assoc = db.query(AddressContact).filter_by(address_id=address_id, contact_id=contact_obj.id).first()
+    if not assoc:
+        assoc = AddressContact(address_id=address_id, contact_id=contact_obj.id)
+        db.add(assoc)
+        db.commit()
+    # Return updated list
+    address = db.query(Address).filter(Address.id == address_id).first()
+    return address.contacts
+
+
+# Remove a contact from an address
+@router.delete("/addresses/{address_id}/contacts/{contact_id}", response_model=List[ContactResponse])
+def remove_address_contact(address_id: int, contact_id: int, db: Session = Depends(get_db)):
+    assoc = db.query(AddressContact).filter_by(address_id=address_id, contact_id=contact_id).first()
+    if not assoc:
+        raise HTTPException(status_code=404, detail="Contact association not found")
+    db.delete(assoc)
+    db.commit()
+    address = db.query(Address).filter(Address.id == address_id).first()
+    return address.contacts
 
 # Get all addresses
 @router.get("/addresses/", response_model=List[AddressResponse])
