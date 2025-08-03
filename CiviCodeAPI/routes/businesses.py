@@ -1,11 +1,63 @@
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session, joinedload
 from typing import List
-from models import Business
-from schemas import BusinessCreate, BusinessResponse, AddressResponse
+from models import Business, Contact, BusinessContact
+from schemas import BusinessCreate, BusinessResponse, AddressResponse, ContactResponse
+from fastapi import Body
 from database import get_db
 
 router = APIRouter()
+
+# Get all contacts for a business
+@router.get("/businesses/{business_id}/contacts", response_model=List[ContactResponse])
+def get_business_contacts(business_id: int, db: Session = Depends(get_db)):
+    business = db.query(Business).filter(Business.id == business_id).first()
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+    return business.contacts
+
+# Add a contact (existing or new) to a business
+@router.post("/businesses/{business_id}/contacts", response_model=List[ContactResponse])
+def add_business_contact(business_id: int, contact: dict = Body(...), db: Session = Depends(get_db)):
+    business = db.query(Business).filter(Business.id == business_id).first()
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+    contact_id = contact.get("contact_id")
+    if contact_id:
+        # Add existing contact
+        contact_obj = db.query(Contact).filter(Contact.id == contact_id).first()
+        if not contact_obj:
+            raise HTTPException(status_code=404, detail="Contact not found")
+    else:
+        # Create new contact
+        contact_obj = Contact(
+            name=contact.get("name"),
+            email=contact.get("email"),
+            phone=contact.get("phone")
+        )
+        db.add(contact_obj)
+        db.commit()
+        db.refresh(contact_obj)
+    # Check for existing association
+    assoc = db.query(BusinessContact).filter_by(business_id=business_id, contact_id=contact_obj.id).first()
+    if not assoc:
+        assoc = BusinessContact(business_id=business_id, contact_id=contact_obj.id)
+        db.add(assoc)
+        db.commit()
+    # Return updated list
+    business = db.query(Business).filter(Business.id == business_id).first()
+    return business.contacts
+
+# Remove a contact from a business
+@router.delete("/businesses/{business_id}/contacts/{contact_id}", response_model=List[ContactResponse])
+def remove_business_contact(business_id: int, contact_id: int, db: Session = Depends(get_db)):
+    assoc = db.query(BusinessContact).filter_by(business_id=business_id, contact_id=contact_id).first()
+    if not assoc:
+        raise HTTPException(status_code=404, detail="Contact association not found")
+    db.delete(assoc)
+    db.commit()
+    business = db.query(Business).filter(Business.id == business_id).first()
+    return business.contacts
 
 # Get all businesses
 @router.get("/businesses/", response_model=List[BusinessResponse])
