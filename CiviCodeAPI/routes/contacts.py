@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException, Depends, Query
+
+from fastapi import APIRouter, HTTPException, Depends, Query, Body
 from sqlalchemy.orm import Session
 from typing import List
 from models import Contact
@@ -6,8 +7,10 @@ from schemas import ContactCreate, ContactResponse
 from database import get_db
 from sqlalchemy import or_
 
-
 router = APIRouter()
+
+
+
 
 # Get all contacts, with optional search
 @router.get("/contacts/", response_model=List[ContactResponse])
@@ -69,3 +72,14 @@ def get_contact(contact_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Contact not found")
     return contact
 
+# Update an existing contact
+@router.put("/contacts/{contact_id}", response_model=ContactResponse)
+def update_contact(contact_id: int, contact: ContactCreate = Body(...), db: Session = Depends(get_db)):
+    db_contact = db.query(Contact).filter(Contact.id == contact_id).first()
+    if not db_contact:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    for field, value in contact.dict().items():
+        setattr(db_contact, field, value)
+    db.commit()
+    db.refresh(db_contact)
+    return db_contact
