@@ -131,9 +131,92 @@ def get_comment_photos(comment_id: int, db: Session = Depends(get_db)):
         })
 
     return photos
+ 
+# Create a new comment for an Address, with optional file attachments
+@router.post("/comments/{address_id}/address/", response_model=CommentResponse)
+@router.post("/comments/{address_id}/address", response_model=CommentResponse)
+async def create_address_comment(
+    address_id: int,
+    content: str = Form(...),
+    user_id: int = Form(...),
+    unit_id: Optional[int] = Form(None),
+    files: List[UploadFile] = File([]),
+    db: Session = Depends(get_db),
+):
+    new_comment = Comment(content=content, user_id=user_id, address_id=address_id, unit_id=unit_id)
+    db.add(new_comment)
+    db.commit()
+    db.refresh(new_comment)
+
+    for file in files:
+        try:
+            content_bytes = await file.read()
+            blob_key = f"address-comments/{new_comment.id}/{uuid.uuid4()}-{file.filename}"
+            blob_client = blob_service_client.get_blob_client(container=CONTAINER_NAME, blob=blob_key)
+            blob_client.upload_blob(content_bytes, overwrite=True, content_type=file.content_type)
+
+            blob_row = ActiveStorageBlob(
+                key=blob_key,
+                filename=file.filename,
+                content_type=file.content_type,
+                meta_data=None,
+                service_name="azure",
+                byte_size=len(content_bytes),
+                checksum=None,
+                created_at=datetime.utcnow(),
+            )
+            db.add(blob_row)
+            db.commit()
+            db.refresh(blob_row)
+
+            attachment_row = ActiveStorageAttachment(
+                name="photos",  # align with get_comment_photos name
+                record_type="Comment",
+                record_id=new_comment.id,
+                blob_id=blob_row.id,
+                created_at=datetime.utcnow(),
+            )
+            db.add(attachment_row)
+            db.commit()
+        except Exception as e:
+            logging.exception(f"Failed to upload attachment for Comment {new_comment.id}: {e}")
+            continue
+
+    # Build a full response including user and optional unit to match CommentResponse
+    user = db.query(User).filter(User.id == new_comment.user_id).first()
+    unit = None
+    if new_comment.unit_id:
+        unit = db.query(Unit).filter(Unit.id == new_comment.unit_id).first()
+
+    return CommentResponse(
+        id=new_comment.id,
+        content=new_comment.content,
+        user_id=new_comment.user_id,
+        address_id=new_comment.address_id,
+        user=UserResponse(
+            id=user.id,
+            name=user.name,
+            email=user.email,
+            phone=user.phone,
+            role=user.role,
+            created_at=user.created_at,
+            updated_at=user.updated_at,
+        ) if user else None,
+        unit_id=new_comment.unit_id,
+        unit=UnitResponse(
+            id=unit.id,
+            number=unit.number,
+            address_id=unit.address_id,
+            created_at=unit.created_at,
+            updated_at=unit.updated_at,
+        ) if unit else None,
+        created_at=new_comment.created_at,
+        updated_at=new_comment.updated_at,
+    )
     
 # Create a new comment for a Contact, with optional file attachments
 @router.post("/comments/{contact_id}/contact/", response_model=ContactCommentResponse)
+@router.post("/comments/{contact_id}/contact", response_model=ContactCommentResponse)
 async def create_contact_comment(
     contact_id: int,
     comment: str = Form(...),
