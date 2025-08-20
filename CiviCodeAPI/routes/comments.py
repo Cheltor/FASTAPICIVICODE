@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
 from sqlalchemy.orm import Session
 from azure.storage.blob import generate_blob_sas, BlobSasPermissions
 from datetime import datetime, timedelta
@@ -9,6 +9,7 @@ from database import get_db
 from storage import blob_service_client, container_client, account_name, account_key, CONTAINER_NAME
 import os
 import logging
+import uuid
 
 router = APIRouter()
 
@@ -112,6 +113,7 @@ def get_comment_photos(comment_id: int, db: Session = Depends(get_db)):
                 blob_name=blob.key,
                 account_key=account_key,
                 permission=BlobSasPermissions(read=True),
+                start=datetime.utcnow() - timedelta(minutes=5),  # Allow for clock skew
                 expiry=datetime.utcnow() + timedelta(hours=1)  # Token valid for 1 hour
             )
         except Exception as e:
@@ -130,14 +132,112 @@ def get_comment_photos(comment_id: int, db: Session = Depends(get_db)):
 
     return photos
     
-# Create a new comment for a Contact
+# Create a new comment for a Contact, with optional file attachments
 @router.post("/comments/{contact_id}/contact/", response_model=ContactCommentResponse)
-def create_contact_comment(contact_id: int, comment: ContactCommentCreate, db: Session = Depends(get_db)):
-    new_comment = ContactComment(**comment.dict())
+async def create_contact_comment(
+    contact_id: int,
+    comment: str = Form(...),
+    user_id: int = Form(...),
+    files: List[UploadFile] = File([]),
+    db: Session = Depends(get_db),
+):
+    # Persist the contact comment first
+    new_comment = ContactComment(comment=comment, user_id=user_id, contact_id=contact_id)
     db.add(new_comment)
     db.commit()
     db.refresh(new_comment)
+
+    # Upload any attachments and create ActiveStorage records
+    for file in files:
+        try:
+            content = await file.read()
+            blob_key = f"contact-comments/{new_comment.id}/{uuid.uuid4()}-{file.filename}"
+            blob_client = blob_service_client.get_blob_client(container=CONTAINER_NAME, blob=blob_key)
+            blob_client.upload_blob(content, overwrite=True, content_type=file.content_type)
+
+            # Create ActiveStorageBlob entry
+            blob_row = ActiveStorageBlob(
+                key=blob_key,
+                filename=file.filename,
+                content_type=file.content_type,
+                meta_data=None,
+                service_name="azure",
+                byte_size=len(content),
+                checksum=None,
+                created_at=datetime.utcnow(),
+            )
+            db.add(blob_row)
+            db.commit()
+            db.refresh(blob_row)
+
+            # Create ActiveStorageAttachment entry linking to the ContactComment
+            attachment_row = ActiveStorageAttachment(
+                name="attachments",
+                record_type="ContactComment",
+                record_id=new_comment.id,
+                blob_id=blob_row.id,
+                created_at=datetime.utcnow(),
+            )
+            db.add(attachment_row)
+            db.commit()
+        except Exception as e:
+            logging.exception(f"Failed to upload attachment for ContactComment {new_comment.id}: {e}")
+            # Don't fail the entire request due to one bad file; continue
+            continue
+
     return new_comment
+
+@router.get("/comments/contact/{comment_id}/attachments")
+def get_contact_comment_attachments(comment_id: int, db: Session = Depends(get_db)):
+    """Return signed URLs for attachments on a ContactComment."""
+    # Ensure the comment exists
+    contact_comment = db.query(ContactComment).filter(ContactComment.id == comment_id).first()
+    if not contact_comment:
+        raise HTTPException(status_code=404, detail="ContactComment not found")
+
+    attachments = db.query(ActiveStorageAttachment).filter_by(
+        record_id=comment_id, record_type="ContactComment", name="attachments"
+    ).all()
+
+    results = []
+    for attachment in attachments:
+        blob = db.query(ActiveStorageBlob).filter_by(id=attachment.blob_id).first()
+        if not blob:
+            continue
+        try:
+            sas_token = generate_blob_sas(
+                account_name=account_name,
+                container_name=CONTAINER_NAME,
+                blob_name=blob.key,
+                account_key=account_key,
+                permission=BlobSasPermissions(read=True),
+                start=datetime.utcnow() - timedelta(minutes=5),  # Allow for clock skew
+                expiry=datetime.utcnow() + timedelta(hours=1),
+            )
+            url = f"https://{account_name}.blob.core.windows.net/{CONTAINER_NAME}/{blob.key}?{sas_token}"
+            results.append({
+                "filename": blob.filename,
+                "content_type": blob.content_type,
+                "url": url,
+            })
+        except Exception as e:
+            logging.exception(f"Failed generating SAS for blob {blob.key}: {e}")
+            continue
+
+    return results
+
+@router.get("/comments/contact/{comment_id}/attachments/count")
+def get_contact_comment_attachment_count(comment_id: int, db: Session = Depends(get_db)):
+    """Return the number of attachments for a ContactComment without generating SAS URLs."""
+    contact_comment = db.query(ContactComment).filter(ContactComment.id == comment_id).first()
+    if not contact_comment:
+        raise HTTPException(status_code=404, detail="ContactComment not found")
+
+    count = db.query(ActiveStorageAttachment).filter_by(
+        record_id=comment_id, record_type="ContactComment", name="attachments"
+    ).count()
+
+    return {"count": count}
 
 # Comments for a specific Unit
 @router.get("/comments/unit/{unit_id}", response_model=List[CommentResponse])
