@@ -4,7 +4,14 @@ from azure.storage.blob import generate_blob_sas, BlobSasPermissions
 from datetime import datetime, timedelta
 from typing import List, Optional
 from models import Comment, ContactComment, ActiveStorageAttachment, ActiveStorageBlob, User, Unit
-from schemas import CommentCreate, CommentResponse, ContactCommentCreate, ContactCommentResponse, UserResponse, UnitResponse
+from schemas import (
+    CommentCreate,
+    CommentResponse,
+    ContactCommentCreate,
+    ContactCommentResponse,
+    UserResponse,
+    UnitResponse,
+)
 from database import get_db
 from storage import blob_service_client, container_client, account_name, account_key, CONTAINER_NAME
 import os
@@ -23,7 +30,7 @@ def get_comments(skip: int = 0, db: Session = Depends(get_db)):
     comments = db.query(Comment).offset(skip).all()
     return comments
 
-# Create a new comment
+# Create a new comment (JSON payload, no files)
 @router.post("/comments/", response_model=CommentResponse)
 def create_comment(comment: CommentCreate, db: Session = Depends(get_db)):
     logger.debug(f"Received payload: {comment.dict()}")
@@ -84,7 +91,7 @@ def get_comments_by_contact(contact_id: int, db: Session = Depends(get_db)):
 
 # Fetch Comment photo by ID
 @router.get("/comments/{comment_id}/photos")
-def get_comment_photos(comment_id: int, db: Session = Depends(get_db)):
+def get_comment_photos(comment_id: int, download: bool = False, db: Session = Depends(get_db)):
     # Check if the comment exists
     comment = db.query(Comment).filter_by(id=comment_id).first()
     if not comment:
@@ -114,7 +121,8 @@ def get_comment_photos(comment_id: int, db: Session = Depends(get_db)):
                 account_key=account_key,
                 permission=BlobSasPermissions(read=True),
                 start=datetime.utcnow() - timedelta(minutes=5),  # Allow for clock skew
-                expiry=datetime.utcnow() + timedelta(hours=1)  # Token valid for 1 hour
+                expiry=datetime.utcnow() + timedelta(hours=1),  # Token valid for 1 hour
+                content_disposition=(f'attachment; filename="{blob.filename}"' if download else None),
             )
         except Exception as e:
             logger.error(f"Error generating SAS token for blob {blob.key}: {e}")
@@ -271,7 +279,7 @@ async def create_contact_comment(
     return new_comment
 
 @router.get("/comments/contact/{comment_id}/attachments")
-def get_contact_comment_attachments(comment_id: int, db: Session = Depends(get_db)):
+def get_contact_comment_attachments(comment_id: int, download: bool = False, db: Session = Depends(get_db)):
     """Return signed URLs for attachments on a ContactComment."""
     # Ensure the comment exists
     contact_comment = db.query(ContactComment).filter(ContactComment.id == comment_id).first()
@@ -296,6 +304,7 @@ def get_contact_comment_attachments(comment_id: int, db: Session = Depends(get_d
                 permission=BlobSasPermissions(read=True),
                 start=datetime.utcnow() - timedelta(minutes=5),  # Allow for clock skew
                 expiry=datetime.utcnow() + timedelta(hours=1),
+                content_disposition=(f'attachment; filename="{blob.filename}"' if download else None),
             )
             url = f"https://{account_name}.blob.core.windows.net/{CONTAINER_NAME}/{blob.key}?{sas_token}"
             results.append({
@@ -361,4 +370,84 @@ def get_comments_by_unit(unit_id: int, db: Session = Depends(get_db)):
             updated_at=comment.updated_at
         ))
     return comment_responses
+
+# Create a new comment for a Unit, with optional file attachments
+@router.post("/comments/unit/{unit_id}/", response_model=CommentResponse)
+@router.post("/comments/unit/{unit_id}", response_model=CommentResponse)
+async def create_unit_comment(
+    unit_id: int,
+    address_id: int = Form(...),
+    content: str = Form(...),
+    user_id: int = Form(...),
+    files: List[UploadFile] = File([]),
+    db: Session = Depends(get_db),
+):
+    new_comment = Comment(content=content, user_id=user_id, address_id=address_id, unit_id=unit_id)
+    db.add(new_comment)
+    db.commit()
+    db.refresh(new_comment)
+
+    for file in files:
+        try:
+            content_bytes = await file.read()
+            blob_key = f"unit-comments/{new_comment.id}/{uuid.uuid4()}-{file.filename}"
+            blob_client = blob_service_client.get_blob_client(container=CONTAINER_NAME, blob=blob_key)
+            blob_client.upload_blob(content_bytes, overwrite=True, content_type=file.content_type)
+
+            blob_row = ActiveStorageBlob(
+                key=blob_key,
+                filename=file.filename,
+                content_type=file.content_type,
+                meta_data=None,
+                service_name="azure",
+                byte_size=len(content_bytes),
+                checksum=None,
+                created_at=datetime.utcnow(),
+            )
+            db.add(blob_row)
+            db.commit()
+            db.refresh(blob_row)
+
+            attachment_row = ActiveStorageAttachment(
+                name="photos",  # align with get_comment_photos name
+                record_type="Comment",
+                record_id=new_comment.id,
+                blob_id=blob_row.id,
+                created_at=datetime.utcnow(),
+            )
+            db.add(attachment_row)
+            db.commit()
+        except Exception as e:
+            logging.exception(f"Failed to upload attachment for Unit Comment {new_comment.id}: {e}")
+            continue
+
+    # Build a full response including user and optional unit to match CommentResponse
+    user = db.query(User).filter(User.id == new_comment.user_id).first()
+    unit = db.query(Unit).filter(Unit.id == unit_id).first()
+
+    return CommentResponse(
+        id=new_comment.id,
+        content=new_comment.content,
+        user_id=new_comment.user_id,
+        address_id=new_comment.address_id,
+        user=UserResponse(
+            id=user.id,
+            name=user.name,
+            email=user.email,
+            phone=user.phone,
+            role=user.role,
+            created_at=user.created_at,
+            updated_at=user.updated_at,
+        ) if user else None,
+        unit_id=unit_id,
+        unit=UnitResponse(
+            id=unit.id,
+            number=unit.number,
+            address_id=unit.address_id,
+            created_at=unit.created_at,
+            updated_at=unit.updated_at,
+        ) if unit else None,
+        created_at=new_comment.created_at,
+        updated_at=new_comment.updated_at,
+    )
 
