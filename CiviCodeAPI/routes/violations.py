@@ -1,14 +1,16 @@
-
-
-from datetime import date
-from fastapi import APIRouter, HTTPException, Depends, Body
+from datetime import date, datetime, timedelta
+from fastapi import APIRouter, HTTPException, Depends, Body, UploadFile, File, Form
 from sqlalchemy.orm import Session, joinedload
 from typing import List
-from models import Violation, Citation
+from azure.storage.blob import generate_blob_sas, BlobSasPermissions
+from models import Violation, Citation, ActiveStorageAttachment, ActiveStorageBlob
 import schemas
 from database import get_db
 from sqlalchemy import desc
 import models
+from storage import blob_service_client, CONTAINER_NAME, account_name, account_key
+import uuid
+import logging
 
 router = APIRouter()
 
@@ -174,6 +176,74 @@ def add_violation_comment(violation_id: int, comment: schemas.ViolationCommentCr
         user=user_response
     )
 
+# Create a violation comment with optional file attachments (multipart form)
+@router.post("/violation/{violation_id}/comments/upload", response_model=schemas.ViolationCommentResponse)
+async def add_violation_comment_with_attachments(
+    violation_id: int,
+    content: str = Form(...),
+    user_id: int = Form(...),
+    files: List[UploadFile] = File([]),
+    db: Session = Depends(get_db),
+):
+    # Ensure violation exists
+    violation = db.query(models.Violation).filter(models.Violation.id == violation_id).first()
+    if not violation:
+        raise HTTPException(status_code=404, detail="Violation not found")
+
+    # Create comment first
+    new_comment = models.ViolationComment(content=content, user_id=user_id, violation_id=violation_id)
+    db.add(new_comment)
+    db.commit()
+    db.refresh(new_comment)
+
+    # Upload attachments (if any)
+    for file in files:
+        try:
+            content_bytes = await file.read()
+            blob_key = f"violation-comments/{new_comment.id}/{uuid.uuid4()}-{file.filename}"
+            blob_client = blob_service_client.get_blob_client(container=CONTAINER_NAME, blob=blob_key)
+            blob_client.upload_blob(content_bytes, overwrite=True, content_type=file.content_type)
+
+            blob_row = ActiveStorageBlob(
+                key=blob_key,
+                filename=file.filename,
+                content_type=file.content_type,
+                meta_data=None,
+                service_name="azure",
+                byte_size=len(content_bytes),
+                checksum=None,
+                created_at=datetime.utcnow(),
+            )
+            db.add(blob_row)
+            db.commit()
+            db.refresh(blob_row)
+
+            attachment_row = ActiveStorageAttachment(
+                name="attachments",
+                record_type="ViolationComment",
+                record_id=new_comment.id,
+                blob_id=blob_row.id,
+                created_at=datetime.utcnow(),
+            )
+            db.add(attachment_row)
+            db.commit()
+        except Exception as e:
+            logging.exception(f"Failed to upload attachment for ViolationComment {new_comment.id}: {e}")
+            continue
+
+    # Build response with optional user
+    user = db.query(models.User).filter(models.User.id == new_comment.user_id).first()
+    user_response = schemas.UserResponse.from_orm(user) if user else None
+    return schemas.ViolationCommentResponse(
+        id=new_comment.id,
+        content=new_comment.content,
+        user_id=new_comment.user_id,
+        violation_id=new_comment.violation_id,
+        created_at=new_comment.created_at,
+        updated_at=new_comment.updated_at,
+        user=user_response,
+    )
+
 # Abate (close) a violation
 @router.post("/violation/{violation_id}/abate", response_model=schemas.ViolationResponse)
 def abate_violation(violation_id: int, db: Session = Depends(get_db)):
@@ -229,4 +299,145 @@ def reopen_violation(violation_id: int, db: Session = Depends(get_db)):
         for vc in violation.violation_comments
     ] if hasattr(violation, 'violation_comments') else []
     return violation_dict
+
+# -------------------------
+# Attachments (Photos) for Violations
+# -------------------------
+
+@router.get("/violation/{violation_id}/photos")
+def get_violation_photos(violation_id: int, download: bool = False, db: Session = Depends(get_db)):
+    """Return signed URLs for attachments on a Violation, similar to comment photos."""
+    violation = db.query(models.Violation).filter(models.Violation.id == violation_id).first()
+    if not violation:
+        # Keep behavior lenient (like comments): return empty list if missing
+        return []
+
+    attachments = db.query(ActiveStorageAttachment).filter(
+        ActiveStorageAttachment.record_id == violation_id,
+        ActiveStorageAttachment.record_type == 'Violation',
+        ActiveStorageAttachment.name == 'photos',
+    ).all()
+
+    results = []
+    for attachment in attachments:
+        blob = db.query(ActiveStorageBlob).filter(ActiveStorageBlob.id == attachment.blob_id).first()
+        if not blob:
+            continue
+        try:
+            sas_token = generate_blob_sas(
+                account_name=account_name,
+                container_name=CONTAINER_NAME,
+                blob_name=blob.key,
+                account_key=account_key,
+                permission=BlobSasPermissions(read=True),
+                start=datetime.utcnow() - timedelta(minutes=5),
+                expiry=datetime.utcnow() + timedelta(hours=1),
+                content_disposition=(f'attachment; filename="{blob.filename}"' if download else None),
+            )
+            url = f"https://{account_name}.blob.core.windows.net/{CONTAINER_NAME}/{blob.key}?{sas_token}"
+            results.append({
+                "filename": blob.filename,
+                "content_type": blob.content_type,
+                "url": url,
+            })
+        except Exception as e:
+            logging.exception(f"Failed generating SAS for blob {blob.key}: {e}")
+            continue
+
+    return results
+
+# Fetch attachments for a specific violation comment
+@router.get("/violation/comment/{comment_id}/attachments")
+def get_violation_comment_attachments(comment_id: int, download: bool = False, db: Session = Depends(get_db)):
+    vc = db.query(models.ViolationComment).filter(models.ViolationComment.id == comment_id).first()
+    if not vc:
+        raise HTTPException(status_code=404, detail="ViolationComment not found")
+
+    attachments = db.query(ActiveStorageAttachment).filter(
+        ActiveStorageAttachment.record_id == comment_id,
+        ActiveStorageAttachment.record_type == "ViolationComment",
+        ActiveStorageAttachment.name == "attachments",
+    ).all()
+
+    results = []
+    for attachment in attachments:
+        blob = db.query(ActiveStorageBlob).filter(ActiveStorageBlob.id == attachment.blob_id).first()
+        if not blob:
+            continue
+        try:
+            sas_token = generate_blob_sas(
+                account_name=account_name,
+                container_name=CONTAINER_NAME,
+                blob_name=blob.key,
+                account_key=account_key,
+                permission=BlobSasPermissions(read=True),
+                start=datetime.utcnow() - timedelta(minutes=5),
+                expiry=datetime.utcnow() + timedelta(hours=1),
+                content_disposition=(f'attachment; filename="{blob.filename}"' if download else None),
+            )
+            url = f"https://{account_name}.blob.core.windows.net/{CONTAINER_NAME}/{blob.key}?{sas_token}"
+            results.append({
+                "filename": blob.filename,
+                "content_type": blob.content_type,
+                "url": url,
+            })
+        except Exception as e:
+            logging.exception(f"Failed generating SAS for blob {blob.key}: {e}")
+            continue
+
+    return results
+
+
+@router.post("/violation/{violation_id}/photos")
+async def upload_violation_photos(
+    violation_id: int,
+    files: List[UploadFile] = File([]),
+    db: Session = Depends(get_db),
+):
+    """Upload attachments for a violation and create ActiveStorage records."""
+    violation = db.query(models.Violation).filter(models.Violation.id == violation_id).first()
+    if not violation:
+        raise HTTPException(status_code=404, detail="Violation not found")
+
+    uploaded = []
+    for file in files:
+        try:
+            content_bytes = await file.read()
+            blob_key = f"violations/{violation_id}/{uuid.uuid4()}-{file.filename}"
+            blob_client = blob_service_client.get_blob_client(container=CONTAINER_NAME, blob=blob_key)
+            blob_client.upload_blob(content_bytes, overwrite=True, content_type=file.content_type)
+
+            blob_row = ActiveStorageBlob(
+                key=blob_key,
+                filename=file.filename,
+                content_type=file.content_type,
+                meta_data=None,
+                service_name="azure",
+                byte_size=len(content_bytes),
+                checksum=None,
+                created_at=datetime.utcnow(),
+            )
+            db.add(blob_row)
+            db.commit()
+            db.refresh(blob_row)
+
+            attachment_row = ActiveStorageAttachment(
+                name="photos",
+                record_type="Violation",
+                record_id=violation_id,
+                blob_id=blob_row.id,
+                created_at=datetime.utcnow(),
+            )
+            db.add(attachment_row)
+            db.commit()
+
+            uploaded.append({
+                "filename": file.filename,
+                "content_type": file.content_type,
+            })
+        except Exception as e:
+            logging.exception(f"Failed to upload attachment for Violation {violation_id}: {e}")
+            continue
+
+    return {"uploaded": uploaded}
 
