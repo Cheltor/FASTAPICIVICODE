@@ -1,26 +1,15 @@
 from fastapi import APIRouter, HTTPException, Depends, status, UploadFile, File, Form
 from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional
-from models import Inspection, Contact, Address, Area, Room, Prompt, Observation, Photo
+from models import Inspection, Contact, Address, Area, Room, Prompt, Observation, Photo, ActiveStorageAttachment, ActiveStorageBlob
 from schemas import InspectionResponse, ContactResponse, AddressResponse, AreaResponse, AreaCreate, RoomResponse, RoomCreate, PromptCreate, PromptResponse, ObservationCreate, ObservationResponse
 from database import get_db
-from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
-from dotenv import load_dotenv
-import os 
+from storage import blob_service_client, CONTAINER_NAME, account_name, account_key
+from datetime import datetime, timedelta
+from azure.storage.blob import generate_blob_sas, BlobSasPermissions
 import uuid
 
 router = APIRouter()
-
-# Load the environment variables
-env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
-load_dotenv(dotenv_path=env_path)
-
-connection_string = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
-
-# Initialize the Azure Blob Storage client
-blob_service_client = BlobServiceClient.from_connection_string(connection_string)
-
-container_name = "civicodephotos"
 
 # Get all inspections
 @router.get("/inspections/", response_model=List[InspectionResponse])
@@ -59,18 +48,37 @@ async def create_inspection(
     db.refresh(new_inspection)
 
     for attachment in attachments:
-        blob_name = f"{uuid.uuid4()}-{attachment.filename}"
-        blob_client = blob_service_client.get_blob_client(container=container_name, blob=blob_name)
-
         try:
-            blob_client.upload_blob(attachment.file, overwrite=True)
+            content_bytes = await attachment.read()
+            blob_key = f"inspections/{new_inspection.id}/{uuid.uuid4()}-{attachment.filename}"
+            blob_client = blob_service_client.get_blob_client(container=CONTAINER_NAME, blob=blob_key)
+            blob_client.upload_blob(content_bytes, overwrite=True, content_type=attachment.content_type)
+
+            blob_row = ActiveStorageBlob(
+                key=blob_key,
+                filename=attachment.filename,
+                content_type=attachment.content_type,
+                meta_data=None,
+                service_name="azure",
+                byte_size=len(content_bytes),
+                checksum=None,
+                created_at=datetime.utcnow(),
+            )
+            db.add(blob_row)
+            db.commit()
+            db.refresh(blob_row)
+
+            attachment_row = ActiveStorageAttachment(
+                name="photos",
+                record_type="Inspection",
+                record_id=new_inspection.id,
+                blob_id=blob_row.id,
+                created_at=datetime.utcnow(),
+            )
+            db.add(attachment_row)
+            db.commit()
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to upload file {attachment.filename}: {str(e)}")
-
-        photo_url = f"https://{blob_service_client.account_name}.blob.core.windows.net/{container_name}/{blob_name}"
-
-        db_photo = Photo(url=photo_url, inspection_id=new_inspection.id)
-        db.add(db_photo)
 
     db.commit()
 
@@ -348,14 +356,14 @@ async def upload_photos_for_observation(
     
     for file in files:
         blob_name = f"{uuid.uuid4()}-{file.filename}"
-        blob_client = blob_service_client.get_blob_client(container=container_name, blob=blob_name)
+        blob_client = blob_service_client.get_blob_client(container=CONTAINER_NAME, blob=blob_name)
 
         try:
             blob_client.upload_blob(file.file, overwrite=True)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to upload file {file.filename}: {str(e)}")
 
-        photo_url = f"https://{blob_service_client.account_name}.blob.core.windows.net/{container_name}/{blob_name}"
+        photo_url = f"https://{blob_service_client.account_name}.blob.core.windows.net/{CONTAINER_NAME}/{blob_name}"
 
         db_photo = Photo(url=photo_url, observation_id=observation_id)
         db.add(db_photo)
@@ -363,3 +371,87 @@ async def upload_photos_for_observation(
     db.commit()
 
     return {"detail": "Photos uploaded successfully"}
+
+# Upload photos for an inspection (used for complaints)
+@router.post("/inspections/{inspection_id}/photos", status_code=status.HTTP_201_CREATED)
+async def upload_photos_for_inspection(
+    inspection_id: int,
+    files: List[UploadFile] = File(...),
+    db: Session = Depends(get_db)
+):
+    inspection = db.query(Inspection).filter(Inspection.id == inspection_id).first()
+    if not inspection:
+        raise HTTPException(status_code=404, detail="Inspection not found")
+
+    for file in files:
+        try:
+            content_bytes = await file.read()
+            blob_key = f"inspections/{inspection_id}/{uuid.uuid4()}-{file.filename}"
+            blob_client = blob_service_client.get_blob_client(container=CONTAINER_NAME, blob=blob_key)
+            blob_client.upload_blob(content_bytes, overwrite=True, content_type=file.content_type)
+
+            blob_row = ActiveStorageBlob(
+                key=blob_key,
+                filename=file.filename,
+                content_type=file.content_type,
+                meta_data=None,
+                service_name="azure",
+                byte_size=len(content_bytes),
+                checksum=None,
+                created_at=datetime.utcnow(),
+            )
+            db.add(blob_row)
+            db.commit()
+            db.refresh(blob_row)
+
+            attachment_row = ActiveStorageAttachment(
+                name="photos",
+                record_type="Inspection",
+                record_id=inspection_id,
+                blob_id=blob_row.id,
+                created_at=datetime.utcnow(),
+            )
+            db.add(attachment_row)
+            db.commit()
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to upload file {file.filename}: {str(e)}")
+
+    db.commit()
+
+    return {"detail": "Photos uploaded successfully"}
+
+# Get attachments for an inspection (complaint)
+@router.get("/inspections/{inspection_id}/photos")
+def get_inspection_photos(inspection_id: int, download: bool = False, db: Session = Depends(get_db)):
+    attachments = db.query(ActiveStorageAttachment).filter(
+        ActiveStorageAttachment.record_id == inspection_id,
+        ActiveStorageAttachment.record_type == 'Inspection',
+        ActiveStorageAttachment.name == 'photos',
+    ).all()
+
+    results = []
+    for attachment in attachments:
+        blob = db.query(ActiveStorageBlob).filter(ActiveStorageBlob.id == attachment.blob_id).first()
+        if not blob:
+            continue
+        try:
+            sas_token = generate_blob_sas(
+                account_name=account_name,
+                container_name=CONTAINER_NAME,
+                blob_name=blob.key,
+                account_key=account_key,
+                permission=BlobSasPermissions(read=True),
+                start=datetime.utcnow() - timedelta(minutes=5),
+                expiry=datetime.utcnow() + timedelta(hours=1),
+                content_disposition=(f'attachment; filename="{blob.filename}"' if download else None),
+            )
+            url = f"https://{account_name}.blob.core.windows.net/{CONTAINER_NAME}/{blob.key}?{sas_token}"
+            results.append({
+                "filename": blob.filename,
+                "content_type": blob.content_type,
+                "url": url,
+            })
+        except Exception:
+            continue
+
+    return results
