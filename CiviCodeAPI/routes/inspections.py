@@ -101,6 +101,89 @@ def get_inspection(inspection_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Inspection not found")
     return inspection
 
+# Update status for an inspection (e.g., complaint)
+@router.patch("/inspections/{inspection_id}/status", response_model=InspectionResponse)
+def update_inspection_status(inspection_id: int, status: str = Form(...), db: Session = Depends(get_db)):
+    inspection = db.query(Inspection).filter(Inspection.id == inspection_id).first()
+    if not inspection:
+        raise HTTPException(status_code=404, detail="Inspection not found")
+    inspection.status = status
+    db.commit()
+
+    # Re-load with relationships so response includes nested address/contact
+    updated = (
+        db.query(Inspection)
+        .options(
+            joinedload(Inspection.address),
+            joinedload(Inspection.contact)
+        )
+        .filter(Inspection.id == inspection_id)
+        .first()
+    )
+    return updated
+
+# Update contact for an inspection (assign an existing contact)
+@router.patch("/inspections/{inspection_id}/contact", response_model=InspectionResponse)
+def update_inspection_contact(inspection_id: int, contact_id: int = Form(...), db: Session = Depends(get_db)):
+    inspection = db.query(Inspection).filter(Inspection.id == inspection_id).first()
+    if not inspection:
+        raise HTTPException(status_code=404, detail="Inspection not found")
+
+    # Validate contact exists
+    contact = db.query(Contact).filter(Contact.id == contact_id).first()
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contact not found")
+
+    inspection.contact_id = contact_id
+    db.commit()
+
+    updated = (
+        db.query(Inspection)
+        .options(
+            joinedload(Inspection.address),
+            joinedload(Inspection.contact)
+        )
+        .filter(Inspection.id == inspection_id)
+        .first()
+    )
+    return updated
+
+# Update schedule for an inspection
+@router.patch("/inspections/{inspection_id}/schedule", response_model=InspectionResponse)
+def update_inspection_schedule(
+    inspection_id: int,
+    scheduled_datetime: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+):
+    inspection = db.query(Inspection).filter(Inspection.id == inspection_id).first()
+    if not inspection:
+        raise HTTPException(status_code=404, detail="Inspection not found")
+
+    # Accept empty/None to clear
+    if scheduled_datetime is None or scheduled_datetime == "":
+        inspection.scheduled_datetime = None
+    else:
+        # Expect ISO-like format; support HTML datetime-local (YYYY-MM-DDTHH:MM)
+        try:
+            # datetime.fromisoformat handles both 'YYYY-MM-DDTHH:MM' and with seconds
+            parsed = datetime.fromisoformat(scheduled_datetime)
+        except ValueError:
+            raise HTTPException(status_code=422, detail="Invalid datetime format. Use YYYY-MM-DDTHH:MM")
+        inspection.scheduled_datetime = parsed
+
+    db.commit()
+
+    updated = (
+        db.query(Inspection)
+        .options(
+            joinedload(Inspection.address),
+            joinedload(Inspection.contact)
+        )
+        .filter(Inspection.id == inspection_id)
+        .first()
+    )
+    return updated
+
 # Get all inspections for a specific Address
 @router.get("/inspections/address/{address_id}", response_model=List[InspectionResponse])
 def get_inspections_by_address(address_id: int, db: Session = Depends(get_db)):
