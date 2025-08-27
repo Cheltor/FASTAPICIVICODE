@@ -35,11 +35,34 @@ def get_contacts(
 # Create a new contact
 @router.post("/contacts/", response_model=ContactResponse)
 def create_contact(contact: ContactCreate, db: Session = Depends(get_db)):
-    new_contact = Contact(**contact.dict())
-    db.add(new_contact)
-    db.commit()
-    db.refresh(new_contact)
-    return new_contact
+        # Normalize email and phone for comparison
+        email = (contact.email or "").strip().lower()
+        phone_digits = "".join([c for c in (contact.phone or "") if c.isdigit()])
+
+        # Check for duplicates by email or phone
+        q = db.query(Contact)
+        if email:
+            q = q.filter(Contact.email.ilike(email))
+        existing = q.first() if email else None
+
+        if not existing and phone_digits:
+            # Compare only digits to avoid formatting differences
+            # Fetch potential matches and compare stripped digits
+            candidates = db.query(Contact).filter(Contact.phone.isnot(None)).all()
+            for c in candidates:
+                digits = "".join([ch for ch in (c.phone or "") if ch.isdigit()])
+                if digits and digits == phone_digits:
+                    existing = c
+                    break
+
+        if existing:
+            raise HTTPException(status_code=409, detail="Contact with this email or phone already exists")
+
+        new_contact = Contact(**contact.dict())
+        db.add(new_contact)
+        db.commit()
+        db.refresh(new_contact)
+        return new_contact
 
 # Get a specific contact by ID
 @router.get("/contacts/search", response_model=List[ContactResponse])
