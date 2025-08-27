@@ -377,12 +377,22 @@ class PhotoBase(BaseModel):
 class PhotoCreate(PhotoBase):
     pass    
 
+class PhotoResponse(PhotoBase):
+    id: int
+    observation_id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
 # Pydantic schema for Observations
 class ObservationBase(BaseModel):
     content: str
     user_id: int
     potentialvio: Optional[bool] = False
     photos: Optional[List[PhotoCreate]] = None
+    codes: Optional[List[int]] = None  # suspected code IDs
 
 class ObservationCreate(ObservationBase):
     pass
@@ -394,6 +404,33 @@ class ObservationResponse(ObservationBase):
     user_id: int
     created_at: datetime
     updated_at: datetime
+    codes: Optional[List['CodeResponse']] = None
+    photos: Optional[List[PhotoResponse]] = None
+
+    class Config:
+        from_attributes = True
+
+class ObservationUpdate(BaseModel):
+    content: Optional[str] = None
+    potentialvio: Optional[bool] = None
+    codes: Optional[List[int]] = None
+
+# Observation + Area/Unit context for review screens
+class PotentialObservationResponse(BaseModel):
+    id: int
+    content: str
+    area_id: int
+    user_id: int
+    potentialvio: Optional[bool] = False
+    created_at: datetime
+    updated_at: datetime
+    # Context
+    inspection_id: int
+    area_name: Optional[str] = None
+    unit_id: Optional[int] = None
+    unit_number: Optional[str] = None
+    codes: Optional[List['CodeResponse']] = None
+    photos: Optional[List[PhotoResponse]] = None
 
     class Config:
         from_attributes = True

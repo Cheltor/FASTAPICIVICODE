@@ -2,7 +2,7 @@
 from fastapi import APIRouter, HTTPException, Depends, Query, Body
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from sqlalchemy import or_
+from sqlalchemy import or_, func
 from sqlalchemy.exc import IntegrityError
 from storage import blob_service_client, CONTAINER_NAME
 from database import get_db  # Ensure get_db is imported before use
@@ -368,8 +368,21 @@ def create_unit(address_id: int, unit: UnitCreate, db: Session = Depends(get_db)
     if not address:
         raise HTTPException(status_code=404, detail="Address not found")
     
-    # Create a new unit
-    new_unit = Unit(**unit.dict(), address_id=address_id)
+    # Normalize number: trim + uppercase to avoid case/spacing duplicates
+    normalized_number = (unit.number or "").strip().upper()
+    if not normalized_number:
+        raise HTTPException(status_code=400, detail="Unit number is required")
+
+    # Prevent duplicates even if DB constraint is missing (compare TRIM/UPPER)
+    existing = db.query(Unit).filter(
+        Unit.address_id == address_id,
+        func.upper(func.trim(Unit.number)) == normalized_number
+    ).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Unit with this number already exists for this address")
+
+    # Create a new unit with normalized number
+    new_unit = Unit(number=normalized_number, address_id=address_id)
     try:
         db.add(new_unit)
         db.commit()
@@ -429,11 +442,18 @@ def update_unit_number(unit_id: int, data: dict = Body(...), db: Session = Depen
     new_number = data.get("number")
     if not new_number:
         raise HTTPException(status_code=400, detail="Missing unit number")
+    normalized_number = (new_number or "").strip().upper()
+    if not normalized_number:
+        raise HTTPException(status_code=400, detail="Unit number is required")
     # Check for duplicate number for this address (exclude self)
-    duplicate = db.query(Unit).filter(Unit.address_id == unit.address_id, Unit.number == new_number, Unit.id != unit_id).first()
+    duplicate = db.query(Unit).filter(
+        Unit.address_id == unit.address_id,
+        func.upper(func.trim(Unit.number)) == normalized_number,
+        Unit.id != unit_id
+    ).first()
     if duplicate:
         raise HTTPException(status_code=400, detail="Unit number already exists for this address.")
-    unit.number = new_number
+    unit.number = normalized_number
     db.commit()
     db.refresh(unit)
     return unit

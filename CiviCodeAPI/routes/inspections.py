@@ -2,8 +2,10 @@ from fastapi import APIRouter, HTTPException, Depends, status, UploadFile, File,
 from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional
 from models import Inspection, Contact, Address, Area, Room, Prompt, Observation, Photo, ActiveStorageAttachment, ActiveStorageBlob
-from schemas import InspectionResponse, ContactResponse, AddressResponse, AreaResponse, AreaCreate, RoomResponse, RoomCreate, PromptCreate, PromptResponse, ObservationCreate, ObservationResponse
+from schemas import InspectionResponse, ContactResponse, AddressResponse, AreaResponse, AreaCreate, RoomResponse, RoomCreate, PromptCreate, PromptResponse, ObservationCreate, ObservationResponse, ObservationUpdate
+from schemas import InspectionResponse, ContactResponse, AddressResponse, AreaResponse, AreaCreate, RoomResponse, RoomCreate, PromptCreate, PromptResponse, ObservationCreate, ObservationResponse, PotentialObservationResponse
 from database import get_db
+from models import Code
 from storage import blob_service_client, CONTAINER_NAME, account_name, account_key
 from datetime import datetime, timedelta
 from azure.storage.blob import generate_blob_sas, BlobSasPermissions
@@ -398,7 +400,15 @@ def delete_area(area_id: int, db: Session = Depends(get_db)):
 # Get all observations for a specific area
 @router.get("/areas/{area_id}/observations", response_model=List[ObservationResponse])
 def get_observations_for_area(area_id: int, db: Session = Depends(get_db)):
-    observations = db.query(Observation).filter(Observation.area_id == area_id).all()
+    observations = (
+        db.query(Observation)
+        .options(
+            joinedload(Observation.codes),
+            joinedload(Observation.photos),
+        )
+        .filter(Observation.area_id == area_id)
+        .all()
+    )
     return observations
 
 # Create a new observation for an area
@@ -413,17 +423,51 @@ def create_observation_for_area(
     if not area:
         raise HTTPException(status_code=404, detail="Area not found")
 
+    # Persist observation with required user_id
     new_observation = Observation(
         content=observation.content,
         area_id=area_id,  # Use area_id from the URL
-        potentialvio=observation.potentialvio
+        potentialvio=observation.potentialvio,
+        user_id=observation.user_id,
     )
     db.add(new_observation)
     db.commit()
     db.refresh(new_observation)
+    # Attach suspected codes if provided
+    if observation.codes:
+        codes = db.query(Code).filter(Code.id.in_(observation.codes)).all()
+        new_observation.codes = codes
+        db.commit()
+        db.refresh(new_observation)
 
     return new_observation
 
+
+@router.patch("/observations/{observation_id}", response_model=ObservationResponse)
+def update_observation(observation_id: int, payload: ObservationUpdate, db: Session = Depends(get_db)):
+    obs = (
+        db.query(Observation)
+        .options(joinedload(Observation.codes), joinedload(Observation.photos))
+        .filter(Observation.id == observation_id)
+        .first()
+    )
+    if not obs:
+        raise HTTPException(status_code=404, detail="Observation not found")
+
+    data = payload.dict(exclude_unset=True)
+    # Update simple fields
+    if 'content' in data and data['content'] is not None:
+        obs.content = data['content']
+    if 'potentialvio' in data and data['potentialvio'] is not None:
+        obs.potentialvio = data['potentialvio']
+    # Update suspected codes if provided
+    if 'codes' in data and data['codes'] is not None:
+        codes = db.query(Code).filter(Code.id.in_(data['codes'] or [])).all()
+        obs.codes = codes
+
+    db.commit()
+    db.refresh(obs)
+    return obs
 
 
 # Upload photos for an observation
@@ -454,6 +498,8 @@ async def upload_photos_for_observation(
     db.commit()
 
     return {"detail": "Photos uploaded successfully"}
+
+    
 
 # Upload photos for an inspection (used for complaints)
 @router.post("/inspections/{inspection_id}/photos", status_code=status.HTTP_201_CREATED)
@@ -498,6 +544,55 @@ async def upload_photos_for_inspection(
             db.commit()
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to upload file {file.filename}: {str(e)}")
+
+    return {"detail": "Photos uploaded successfully"}
+
+# List all potential violations (observations flagged potential) for an inspection
+@router.get("/inspections/{inspection_id}/potential-observations", response_model=List[PotentialObservationResponse])
+def get_potential_observations_for_inspection(inspection_id: int, db: Session = Depends(get_db)):
+    # Ensure inspection exists
+    inspection = db.query(Inspection).filter(Inspection.id == inspection_id).first()
+    if not inspection:
+        raise HTTPException(status_code=404, detail="Inspection not found")
+
+    # Join Observations -> Area -> Unit to provide context
+    observations = (
+        db.query(Observation, Area)
+        .options(
+            joinedload(Observation.codes),
+            joinedload(Observation.photos),
+        )
+        .join(Area, Observation.area_id == Area.id)
+        .filter(Area.inspection_id == inspection_id, Observation.potentialvio == True)
+        .order_by(Observation.created_at.desc())
+        .all()
+    )
+
+    results: List[PotentialObservationResponse] = []
+    for obs, area in observations:
+        unit_number = None
+        if area.unit_id:
+            # Lazy fetch unit number to avoid heavy join; small per-item overhead acceptable here
+            from models import Unit  # local import to avoid circular
+            unit = db.query(Unit).filter(Unit.id == area.unit_id).first()
+            unit_number = unit.number if unit else None
+        results.append(PotentialObservationResponse(
+            id=obs.id,
+            content=obs.content,
+            area_id=obs.area_id,
+            user_id=obs.user_id,
+            potentialvio=obs.potentialvio,
+            created_at=obs.created_at,
+            updated_at=obs.updated_at,
+            inspection_id=area.inspection_id,
+            area_name=area.name,
+            unit_id=area.unit_id,
+            unit_number=unit_number,
+            codes=obs.codes,
+            photos=obs.photos,
+        ))
+
+    return results
 
     db.commit()
 

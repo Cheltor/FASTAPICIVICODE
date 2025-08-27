@@ -420,7 +420,6 @@ class Observation(Base):
     id = Column(BigInteger, primary_key=True, index=True)
     content = Column(Text)
     area_id = Column(BigInteger, ForeignKey('areas.id'), nullable=False)
-    photos = Column(String)
     potentialvio = Column(Boolean)
     user_id = Column(BigInteger, ForeignKey('users.id'), nullable=False)
     created_at = Column(DateTime, default=func.now(), nullable=False)  # Auto-generate created_at timestamp
@@ -430,6 +429,12 @@ class Observation(Base):
     area = relationship("Area", back_populates="observations")  # Observation belongs to an Area
     user = relationship("User", back_populates="observations")  # Observation belongs to a User
     photos = relationship("Photo", back_populates="observation", cascade="all, delete-orphan")  # Observation has many Photos
+    # Many-to-many suspected codes
+    codes = relationship(
+        "Code",
+        secondary="observation_codes",
+        backref="observations"
+    )
 
 # Photos
 class Photo(Base):
@@ -443,6 +448,13 @@ class Photo(Base):
 
     # Relationships
     observation = relationship("Observation", back_populates="photos")  # Photo belongs to an Observation
+
+# ObservationCodes (join table for suspected codes per Observation)
+class ObservationCode(Base):
+    __tablename__ = "observation_codes"
+
+    observation_id = Column(BigInteger, ForeignKey('observations.id'), primary_key=True, nullable=False)
+    code_id = Column(BigInteger, ForeignKey('codes.id'), primary_key=True, nullable=False)
 
 # Prompts
 class Prompt(Base):
