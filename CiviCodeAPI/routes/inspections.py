@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends, status, UploadFile, File, Form
 from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional
-from models import Inspection, Contact, Address, Area, Room, Prompt, Observation, Photo, ActiveStorageAttachment, ActiveStorageBlob
+from models import Inspection, Contact, Address, Area, Room, Prompt, Observation, Photo, ActiveStorageAttachment, ActiveStorageBlob, License
 from schemas import InspectionResponse, ContactResponse, AddressResponse, AreaResponse, AreaCreate, RoomResponse, RoomCreate, PromptCreate, PromptResponse, ObservationCreate, ObservationResponse, ObservationUpdate
 from schemas import InspectionResponse, ContactResponse, AddressResponse, AreaResponse, AreaCreate, RoomResponse, RoomCreate, PromptCreate, PromptResponse, ObservationCreate, ObservationResponse, PotentialObservationResponse
 from database import get_db
@@ -35,6 +35,8 @@ async def create_inspection(
     contact_id: Optional[int] = Form(None),
     attachments: List[UploadFile] = File([]),
     paid: bool = Form(False),
+    inspector_id: Optional[int] = Form(None),
+    business_id: Optional[int] = Form(None),
     db: Session = Depends(get_db)
 ):
     new_inspection = Inspection(
@@ -43,7 +45,9 @@ async def create_inspection(
         source=source,
         description=description,
         contact_id=contact_id,
-        paid=paid
+        paid=paid,
+        inspector_id=inspector_id,
+        business_id=business_id,
     )
     db.add(new_inspection)
     db.commit()
@@ -111,6 +115,37 @@ def update_inspection_status(inspection_id: int, status: str = Form(...), db: Se
         raise HTTPException(status_code=404, detail="Inspection not found")
     inspection.status = status
     db.commit()
+
+    # If a license-related inspection is marked completed, create a License record once
+    try:
+        status_lower = (status or "").lower()
+        is_completed = status_lower == "completed" or status_lower == "satisfactory"
+        license_sources = {
+            "business license": 1,
+            "single family license": 2,
+            "multifamily license": 3,
+        }
+        src = (inspection.source or "").lower()
+        if is_completed and src in license_sources:
+            # Check if a license already exists for this inspection
+            existing = (
+                db.query(License)
+                .filter(License.inspection_id == inspection.id)
+                .first()
+            )
+            if not existing:
+                new_license = License(
+                    inspection_id=inspection.id,
+                    sent=False,
+                    paid=bool(getattr(inspection, "paid", False)),
+                    license_type=license_sources[src],
+                    business_id=getattr(inspection, "business_id", None),
+                )
+                db.add(new_license)
+                db.commit()
+    except Exception:
+        # Silently ignore license creation errors to not block status update
+        pass
 
     # Re-load with relationships so response includes nested address/contact
     updated = (

@@ -267,8 +267,9 @@ class CodeResponse(CodeBase):
 class LicenseBase(BaseModel):
     inspection_id: int
     sent: Optional[bool] = False
-    paid: int
+    paid: bool
     license_type: int
+    business_id: Optional[int] = None
 
 class LicenseCreate(LicenseBase):
     pass
