@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends, status, UploadFile, File, Form
 from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional
-from models import Inspection, Contact, Address, Area, Room, Prompt, Observation, Photo, ActiveStorageAttachment, ActiveStorageBlob, License
+from models import Inspection, Contact, Address, Area, Room, Prompt, Observation, Photo, ActiveStorageAttachment, ActiveStorageBlob, License, Permit, Violation
 from schemas import InspectionResponse, ContactResponse, AddressResponse, AreaResponse, AreaCreate, RoomResponse, RoomCreate, PromptCreate, PromptResponse, ObservationCreate, ObservationResponse, ObservationUpdate
 from schemas import InspectionResponse, ContactResponse, AddressResponse, AreaResponse, AreaCreate, RoomResponse, RoomCreate, PromptCreate, PromptResponse, ObservationCreate, ObservationResponse, PotentialObservationResponse
 from database import get_db
@@ -117,35 +117,68 @@ def update_inspection_status(inspection_id: int, status: str = Form(...), db: Se
     db.commit()
 
     # If a license-related inspection is marked completed, create a License record once
+    status_lower = (status or "").lower()
+    is_completed = status_lower == "completed" or status_lower == "satisfactory"
+    src = (inspection.source or "").lower()
+    # License auto-create
     try:
-        status_lower = (status or "").lower()
-        is_completed = status_lower == "completed" or status_lower == "satisfactory"
         license_sources = {
             "business license": 1,
             "single family license": 2,
             "multifamily license": 3,
         }
-        src = (inspection.source or "").lower()
-        if is_completed and src in license_sources:
-            # Check if a license already exists for this inspection
-            existing = (
-                db.query(License)
-                .filter(License.inspection_id == inspection.id)
+        # Exclude permit-like sources explicitly
+        permit_keywords = ["permit", "building/dumpster/pod"]
+        is_license_source = src in license_sources and not any(k in src for k in permit_keywords)
+        if is_completed and is_license_source:
+            # Check for any active (status == 0) violations on the same address
+            open_violation_exists = (
+                db.query(Violation.id)
+                .filter(
+                    Violation.address_id == inspection.address_id,
+                    Violation.status == 0
+                )
+                .first()
+                is not None
+            )
+            if not open_violation_exists:
+                existing = (
+                    db.query(License)
+                    .filter(License.inspection_id == inspection.id)
+                    .first()
+                )
+                if not existing:
+                    new_license = License(
+                        inspection_id=inspection.id,
+                        sent=False,
+                        paid=bool(getattr(inspection, "paid", False)),
+                        license_type=license_sources[src],
+                        business_id=getattr(inspection, "business_id", None),
+                    )
+                    db.add(new_license)
+                    db.commit()
+    except Exception:
+        db.rollback()
+    # Permit auto-create
+    try:
+        permit_keywords = ["permit", "building/dumpster/pod"]
+        if is_completed and any(k in src for k in permit_keywords):
+            existing_permit = (
+                db.query(Permit)
+                .filter(Permit.inspection_id == inspection.id)
                 .first()
             )
-            if not existing:
-                new_license = License(
+            if not existing_permit:
+                new_permit = Permit(
                     inspection_id=inspection.id,
-                    sent=False,
-                    paid=bool(getattr(inspection, "paid", False)),
-                    license_type=license_sources[src],
+                    permit_type=inspection.source,
                     business_id=getattr(inspection, "business_id", None),
+                    paid=bool(getattr(inspection, "paid", False)),
                 )
-                db.add(new_license)
+                db.add(new_permit)
                 db.commit()
     except Exception:
-        # Silently ignore license creation errors to not block status update
-        pass
+        db.rollback()
 
     # Re-load with relationships so response includes nested address/contact
     updated = (

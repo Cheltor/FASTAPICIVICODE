@@ -282,6 +282,28 @@ class LicenseResponse(LicenseBase):
     class Config:
         from_attributes = True
 
+# Permits
+class PermitBase(BaseModel):
+    inspection_id: int
+    permit_type: Optional[str] = None
+    business_id: Optional[int] = None
+    permit_number: Optional[str] = None
+    date_issued: Optional[date] = None
+    expiration_date: Optional[date] = None
+    conditions: Optional[str] = None
+    paid: bool = False
+
+class PermitCreate(PermitBase):
+    pass
+
+class PermitResponse(PermitBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
 # Pydantic schema for ContactComments
 class ContactCommentBase(BaseModel):
     contact_id: int

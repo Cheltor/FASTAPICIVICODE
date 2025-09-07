@@ -9,6 +9,7 @@ from .inspections import router as inspections_router
 from .codes import router as codes_router
 from .licenses import router as licenses_router
 from .dashboard import router as dashboard_router
+from .permits import router as permits_router
 # Import other route modules as needed
 
 # You can list all the routers here
@@ -24,5 +25,6 @@ __all__ = [
     "codes_router",
     "licenses_router",
     "dashboard_router",
+    "permits_router",
     # Add other routers here
 ]

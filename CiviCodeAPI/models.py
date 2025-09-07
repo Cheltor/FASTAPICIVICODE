@@ -398,6 +398,26 @@ class License(Base):
     created_at = Column(DateTime, default=func.now(), nullable=False)  # Auto-generate created_at timestamp
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)  # Auto-update updated_at timestamp
 
+# Permits
+class Permit(Base):
+    __tablename__ = "permits"
+
+    id = Column(BigInteger, primary_key=True, index=True)
+    inspection_id = Column(BigInteger, ForeignKey('inspections.id'), nullable=False)
+    # Free-form type label (e.g., "Building/Dumpster/POD permit"); can be normalized later
+    permit_type = Column(String)
+    business_id = Column(BigInteger, ForeignKey('businesses.id'))
+    permit_number = Column(String)
+    date_issued = Column(Date)
+    expiration_date = Column(Date)
+    conditions = Column(Text)
+    paid = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)  # Auto-generate created_at timestamp
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)  # Auto-update updated_at timestamp
+    __table_args__ = (
+        UniqueConstraint('inspection_id', name='uq_permits_inspection_id'),
+    )
+
 
 # Notifications
 class Notification(Base):

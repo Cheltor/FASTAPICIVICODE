@@ -16,6 +16,13 @@ def get_licenses(inspection_id: Optional[int] = None, db: Session = Depends(get_
     licenses = q.all()
     return licenses
 
+@router.get("/licenses/{license_id}", response_model=LicenseResponse)
+def get_license(license_id: int, db: Session = Depends(get_db)):
+    lic = db.query(License).filter(License.id == license_id).first()
+    if not lic:
+        raise HTTPException(status_code=404, detail="License not found")
+    return lic
+
 @router.post("/licenses/", response_model=LicenseResponse)
 def create_license(license_in: LicenseCreate, db: Session = Depends(get_db)):
     # avoid duplicate for same inspection
