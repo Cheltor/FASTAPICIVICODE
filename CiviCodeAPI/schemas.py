@@ -238,6 +238,7 @@ class InspectionResponse(BaseModel):
     contact: Optional[ContactResponse] = None
     created_at: datetime
     updated_at: datetime
+    status_message: Optional[str] = None  # ephemeral message about side-effects (e.g., license creation)
 
     class Config:
         from_attributes = True
@@ -270,6 +271,9 @@ class LicenseBase(BaseModel):
     paid: bool
     license_type: int
     business_id: Optional[int] = None
+    date_issued: Optional[date] = None
+    expiration_date: Optional[date] = None
+    fiscal_year: Optional[str] = None
 
 class LicenseCreate(LicenseBase):
     pass
@@ -278,6 +282,8 @@ class LicenseResponse(LicenseBase):
     id: int
     created_at: datetime
     updated_at: datetime
+    address_id: Optional[int] = None
+    combadd: Optional[str] = None  # address combined
 
     class Config:
         from_attributes = True
@@ -300,6 +306,8 @@ class PermitResponse(PermitBase):
     id: int
     created_at: datetime
     updated_at: datetime
+    address_id: Optional[int] = None
+    combadd: Optional[str] = None
 
     class Config:
         from_attributes = True

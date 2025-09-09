@@ -7,7 +7,7 @@ from schemas import InspectionResponse, ContactResponse, AddressResponse, AreaRe
 from database import get_db
 from models import Code
 from storage import blob_service_client, CONTAINER_NAME, account_name, account_key
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from azure.storage.blob import generate_blob_sas, BlobSasPermissions
 import uuid
 
@@ -118,67 +118,96 @@ def update_inspection_status(inspection_id: int, status: str = Form(...), db: Se
 
     # If a license-related inspection is marked completed, create a License record once
     status_lower = (status or "").lower()
-    is_completed = status_lower == "completed" or status_lower == "satisfactory"
+    is_completed = status_lower in ("completed", "satisfactory")
     src = (inspection.source or "").lower()
-    # License auto-create
+    status_message = None
+
+    # Unified auto-create logic for license / permit with explicit messaging
     try:
-        license_sources = {
-            "business license": 1,
-            "single family license": 2,
-            "multifamily license": 3,
-        }
-        # Exclude permit-like sources explicitly
-        permit_keywords = ["permit", "building/dumpster/pod"]
-        is_license_source = src in license_sources and not any(k in src for k in permit_keywords)
-        if is_completed and is_license_source:
-            # Check for any active (status == 0) violations on the same address
-            open_violation_exists = (
-                db.query(Violation.id)
-                .filter(
-                    Violation.address_id == inspection.address_id,
-                    Violation.status == 0
-                )
-                .first()
-                is not None
-            )
-            if not open_violation_exists:
-                existing = (
-                    db.query(License)
-                    .filter(License.inspection_id == inspection.id)
-                    .first()
-                )
-                if not existing:
-                    new_license = License(
-                        inspection_id=inspection.id,
-                        sent=False,
-                        paid=bool(getattr(inspection, "paid", False)),
-                        license_type=license_sources[src],
-                        business_id=getattr(inspection, "business_id", None),
+        if is_completed:
+            license_sources = {
+                "business license": 1,
+                "single family license": 2,
+                "multifamily license": 3,
+            }
+            permit_keywords = ["permit", "building/dumpster/pod"]
+
+            created_any = False
+
+            # Determine if this inspection should create a license
+            is_license_source = src in license_sources and not any(k in src for k in permit_keywords)
+            # Determine if this inspection should create a permit
+            is_permit_source = any(k in src for k in permit_keywords)
+
+            # Attempt license creation first (business rule priority)
+            if is_license_source:
+                open_violation_exists = (
+                    db.query(Violation.id)
+                    .filter(
+                        Violation.address_id == inspection.address_id,
+                        Violation.status == 0
                     )
-                    db.add(new_license)
-                    db.commit()
-    except Exception:
-        db.rollback()
-    # Permit auto-create
-    try:
-        permit_keywords = ["permit", "building/dumpster/pod"]
-        if is_completed and any(k in src for k in permit_keywords):
-            existing_permit = (
-                db.query(Permit)
-                .filter(Permit.inspection_id == inspection.id)
-                .first()
-            )
-            if not existing_permit:
-                new_permit = Permit(
-                    inspection_id=inspection.id,
-                    permit_type=inspection.source,
-                    business_id=getattr(inspection, "business_id", None),
-                    paid=bool(getattr(inspection, "paid", False)),
+                    .first()
+                    is not None
                 )
-                db.add(new_permit)
-                db.commit()
+                if open_violation_exists:
+                    status_message = "License not created: open violations exist at this address."
+                else:
+                    existing_license = db.query(License).filter(License.inspection_id == inspection.id).first()
+                    if existing_license:
+                        status_message = f"License already exists (#{existing_license.id})."
+                    else:
+                        today = date.today()
+                        fy_end_year = today.year if today.month < 7 else today.year + 1
+                        fiscal_year = f"{fy_end_year - 1}-{fy_end_year}"
+                        new_license = License(
+                            inspection_id=inspection.id,
+                            sent=False,
+                            revoked=False,
+                            fiscal_year=fiscal_year,
+                            expiration_date=date(fy_end_year, 6, 30),
+                            license_type=license_sources[src],
+                            business_id=inspection.business_id,
+                            license_number=None,
+                            date_issued=today,
+                            conditions=None,
+                            paid=inspection.paid or False,
+                        )
+                        db.add(new_license)
+                        db.commit()
+                        db.refresh(new_license)
+                        status_message = f"License created (#{new_license.id}). Expires {new_license.expiration_date.strftime('%Y-%m-%d')}." 
+                        created_any = True
+
+            # Attempt permit creation if license not created and it's a permit source
+            if not created_any and is_permit_source:
+                existing_permit = db.query(Permit).filter(Permit.inspection_id == inspection.id).first()
+                if existing_permit:
+                    status_message = status_message or f"Permit already exists (#{existing_permit.id})."
+                else:
+                    new_permit = Permit(
+                        inspection_id=inspection.id,
+                        permit_type=inspection.source,
+                        business_id=getattr(inspection, "business_id", None),
+                        paid=bool(getattr(inspection, "paid", False)),
+                    )
+                    db.add(new_permit)
+                    db.commit()
+                    db.refresh(new_permit)
+                    status_message = f"Permit created (#{new_permit.id})."
+                    created_any = True
+
+            # If nothing created and no earlier status_message, supply explicit reason
+            if not created_any and not status_message:
+                if not (is_license_source or is_permit_source):
+                    status_message = "Completed: source not eligible for license or permit creation."
+                else:
+                    # Fallback generic (should be rare if above branches set messages)
+                    status_message = "Completed with no new records created."
     except Exception:
         db.rollback()
+        if not status_message:
+            status_message = "Status updated, but an error occurred during license/permit processing."
 
     # Re-load with relationships so response includes nested address/contact
     updated = (
@@ -190,6 +219,12 @@ def update_inspection_status(inspection_id: int, status: str = Form(...), db: Se
         .filter(Inspection.id == inspection_id)
         .first()
     )
+    # Return augmented object with status_message ephemeral field
+    if updated:
+        # Inject ephemeral field
+        updated_dict = {k: getattr(updated, k) for k in updated.__dict__ if not k.startswith('_')}
+        updated_dict['status_message'] = status_message
+        return updated_dict
     return updated
 
 # Update contact for an inspection (assign an existing contact)
