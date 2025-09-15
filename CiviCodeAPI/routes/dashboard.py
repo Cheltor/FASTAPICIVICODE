@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Query
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, or_
 from typing import List, Dict
@@ -19,9 +19,13 @@ from utils import get_this_workweek, get_last_workweek
 router = APIRouter()
 
 @router.get("/counts/{user_id}", response_model=Dict[str, int])
-def get_counts(user_id: int, db: Session = Depends(get_db)):
-    start_of_this_week, end_of_this_week = get_this_workweek()
-    start_of_last_week, end_of_last_week = get_last_workweek()
+def get_counts(
+    user_id: int,
+    start_day: str = Query('mon', description="Week start day: mon|sun|sat"),
+    db: Session = Depends(get_db)
+):
+    start_of_this_week, end_of_this_week = get_this_workweek(start_day)
+    start_of_last_week, end_of_last_week = get_last_workweek(start_day)
 
     active_violations_count = db.query(func.count(Violation.id)).filter(Violation.user_id == user_id, Violation.status == 0).scalar()
     # Sum comments across all comment-bearing tables for this user (all time)
