@@ -83,6 +83,10 @@ class BusinessBase(BaseModel):
     email: Optional[str] = None
     phone: Optional[str] = None
     trading_as: Optional[str] = None
+    # New fields
+    is_closed: Optional[bool] = False
+    opened_on: Optional[date] = None
+    employee_count: Optional[int] = None
 
 class BusinessCreate(BusinessBase):
     pass

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends
+from datetime import date
 from sqlalchemy.orm import Session, joinedload
 from typing import List
 from models import Business, Contact, BusinessContact
@@ -83,6 +84,10 @@ def get_businesses(skip: int = 0, db: Session = Depends(get_db)):
                 phone=business.phone,
                 email=business.email,
                 website=business.website,
+                trading_as=business.trading_as,
+                is_closed=business.is_closed,
+                opened_on=business.opened_on,
+                employee_count=business.employee_count,
                 address_id=business.address_id,  # Ensure address_id is included
                 address=address_data,
                 created_at=business.created_at,
@@ -112,4 +117,34 @@ def get_business(business_id: int, db: Session = Depends(get_db)):
     business = db.query(Business).options(joinedload(Business.address)).filter(Business.id == business_id).first()
     if not business:
         raise HTTPException(status_code=404, detail="Business not found")
+    return business
+
+# Update business fields (partial)
+@router.patch("/businesses/{business_id}", response_model=BusinessResponse)
+def update_business(business_id: int, data: dict = Body(...), db: Session = Depends(get_db)):
+    business = db.query(Business).filter(Business.id == business_id).first()
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    # Allowed keys to update
+    allowed = {"name", "website", "email", "phone", "trading_as", "unit_id", "is_closed", "opened_on", "employee_count"}
+    for key, value in data.items():
+        if key not in allowed:
+            continue
+        if key == "opened_on":
+            if value in (None, ""):
+                setattr(business, key, None)
+            else:
+                # Accept ISO string or date
+                parsed = value if isinstance(value, date) else date.fromisoformat(str(value))
+                setattr(business, key, parsed)
+        elif key == "employee_count":
+            setattr(business, key, None if value in (None, "") else int(value))
+        elif key == "is_closed":
+            setattr(business, key, bool(value))
+        else:
+            setattr(business, key, value)
+
+    db.commit()
+    db.refresh(business)
     return business

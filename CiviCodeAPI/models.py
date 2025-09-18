@@ -144,6 +144,10 @@ class Business(Base):
     email = Column(String)
     phone = Column(String)
     trading_as = Column(String)
+    # New business attributes
+    is_closed = Column(Boolean, default=False)
+    opened_on = Column(Date)
+    employee_count = Column(Integer)
     created_at = Column(DateTime, default=func.now(), nullable=False)  # Auto-generate created_at timestamp
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)  # Auto-update updated_at timestamp
 
