@@ -292,6 +292,18 @@ class LicenseResponse(LicenseBase):
     class Config:
         from_attributes = True
 
+class LicenseUpdate(BaseModel):
+    sent: Optional[bool] = None
+    paid: Optional[bool] = None
+    license_type: Optional[int] = None
+    business_id: Optional[int] = None
+    date_issued: Optional[date] = None
+    expiration_date: Optional[date] = None
+    fiscal_year: Optional[str] = None
+    license_number: Optional[str] = None
+    conditions: Optional[str] = None
+    revoked: Optional[bool] = None
+
 # Permits
 class PermitBase(BaseModel):
     inspection_id: int

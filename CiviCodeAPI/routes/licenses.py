@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import date
 from models import License, Inspection, Address
-from schemas import LicenseCreate, LicenseResponse
+from schemas import LicenseCreate, LicenseResponse, LicenseUpdate
 from database import get_db
 
 router = APIRouter()
@@ -63,6 +63,12 @@ def create_license(license_in: LicenseCreate, db: Session = Depends(get_db)):
 
     data = license_in.dict()
 
+    # If business_id isn't provided, inherit from the related inspection (if any)
+    if not data.get("business_id"):
+        insp = db.query(Inspection).filter(Inspection.id == data.get("inspection_id")).first()
+        if insp and insp.business_id:
+            data["business_id"] = insp.business_id
+
     # Determine fiscal year (July 1 - June 30). Fiscal year labeled by ending year.
     today = date.today()
     # If we're before July, still in prior fiscal year window that ends current calendar year
@@ -83,6 +89,34 @@ def create_license(license_in: LicenseCreate, db: Session = Depends(get_db)):
     data["fiscal_year"] = fiscal_year
 
     lic = License(**data)
+    db.add(lic)
+    db.commit()
+    db.refresh(lic)
+
+    # augment with address info for consistency
+    insp = db.query(Inspection).filter(Inspection.id == lic.inspection_id).first()
+    combadd = None
+    address_id = None
+    if insp:
+        addr = db.query(Address).filter(Address.id == insp.address_id).first()
+        if addr:
+            combadd = addr.combadd
+            address_id = addr.id
+    data_out = {k: getattr(lic, k) for k in lic.__dict__ if not k.startswith('_')}
+    data_out['combadd'] = combadd
+    data_out['address_id'] = address_id
+    return data_out
+
+@router.put("/licenses/{license_id}", response_model=LicenseResponse)
+def update_license(license_id: int, license_in: LicenseUpdate, db: Session = Depends(get_db)):
+    lic = db.query(License).filter(License.id == license_id).first()
+    if not lic:
+        raise HTTPException(status_code=404, detail="License not found")
+
+    update_fields = license_in.dict(exclude_unset=True)
+    for key, value in update_fields.items():
+        setattr(lic, key, value)
+
     db.add(lic)
     db.commit()
     db.refresh(lic)
