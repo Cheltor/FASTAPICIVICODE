@@ -1,5 +1,7 @@
 from logging.config import fileConfig
 import os
+from pathlib import Path
+from dotenv import load_dotenv
 
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
@@ -30,7 +32,20 @@ def _get_database_url() -> str:
     - On Heroku (DYNO set), ensure sslmode=require unless already specified.
     """
     # Prefer DATABASE_URL from environment (Heroku config var)
+    # load env for local development (prefer .env.development)
+    if not os.getenv("DYNO"):
+        root = Path(__file__).resolve().parents[1]  # FastAPI project root
+        dev = root / ".env.development"
+        default = root / ".env"
+        if dev.exists():
+            load_dotenv(dev)
+        elif default.exists():
+            load_dotenv(default)
+
     url = os.getenv("DATABASE_URL") or context.config.get_main_option("sqlalchemy.url", "")
+    # treat placeholder like empty
+    if url.strip().endswith("://"):
+        url = ""
     if not url:
         raise RuntimeError(
             "No database URL found. Set DATABASE_URL env var or sqlalchemy.url in alembic.ini"

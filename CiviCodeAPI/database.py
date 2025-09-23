@@ -1,11 +1,29 @@
 import os
+from pathlib import Path
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
 from models import Base
 
-# Load environment variables from .env for local dev
-load_dotenv()
+def _load_env() -> None:
+    """Load environment for local development.
+
+    - Prefer .env.development in the FastAPI project root.
+    - Fallback to .env if dev file is missing.
+    - Do nothing on Heroku dynos (env vars provided by platform).
+    """
+    if os.getenv("DYNO"):
+        return
+    root = Path(__file__).resolve().parents[1]  # FastAPI directory
+    dev_env = root / ".env.development"
+    default_env = root / ".env"
+    if dev_env.exists():
+        load_dotenv(dev_env)
+    elif default_env.exists():
+        load_dotenv(default_env)
+
+
+_load_env()
 
 
 def _database_url() -> str:
