@@ -2,7 +2,7 @@ import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
-from .models import Base
+from models import Base
 
 # Load environment variables from .env for local dev
 load_dotenv()
