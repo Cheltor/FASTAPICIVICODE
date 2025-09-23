@@ -18,15 +18,26 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+def _has_table(table_name: str, schema: str | None = None) -> bool:
+    bind = op.get_bind()
+    insp = sa.inspect(bind)
+    try:
+        return insp.has_table(table_name, schema=schema)
+    except TypeError:
+        return insp.has_table(table_name, schema)
+
+
 def upgrade() -> None:
-    # Create the observation_codes join table
-    op.create_table(
-        'observation_codes',
-        sa.Column('observation_id', sa.BigInteger(), sa.ForeignKey('observations.id'), primary_key=True, nullable=False),
-        sa.Column('code_id', sa.BigInteger(), sa.ForeignKey('codes.id'), primary_key=True, nullable=False),
-    )
+    # Create the observation_codes join table if missing
+    if not _has_table('observation_codes'):
+        op.create_table(
+            'observation_codes',
+            sa.Column('observation_id', sa.BigInteger(), sa.ForeignKey('observations.id'), primary_key=True, nullable=False),
+            sa.Column('code_id', sa.BigInteger(), sa.ForeignKey('codes.id'), primary_key=True, nullable=False),
+        )
 
 
 def downgrade() -> None:
-    # Drop the observation_codes join table
-    op.drop_table('observation_codes')
+    # Drop the observation_codes join table if present
+    if _has_table('observation_codes'):
+        op.drop_table('observation_codes')
