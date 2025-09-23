@@ -85,4 +85,10 @@ def upgrade():
 
 def downgrade():
     # Drop the unique index
-    op.drop_index('ux_units_number_address', table_name='units')
+    insp = sa.inspect(op.get_bind())
+    try:
+        indexes = insp.get_indexes('units')
+    except Exception:
+        indexes = []
+    if any(ix.get('name') == 'ux_units_number_address' for ix in indexes):
+        op.drop_index('ux_units_number_address', table_name='units')

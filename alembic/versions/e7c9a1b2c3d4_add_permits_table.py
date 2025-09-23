@@ -17,23 +17,44 @@ depends_on = None
 
 
 def upgrade():
-    op.create_table(
-        'permits',
-        sa.Column('id', sa.BigInteger(), primary_key=True, index=True),
-        sa.Column('inspection_id', sa.BigInteger(), sa.ForeignKey('inspections.id'), nullable=False),
-        sa.Column('permit_type', sa.String(), nullable=True),
-        sa.Column('business_id', sa.BigInteger(), sa.ForeignKey('businesses.id'), nullable=True),
-        sa.Column('permit_number', sa.String(), nullable=True),
-        sa.Column('date_issued', sa.Date(), nullable=True),
-        sa.Column('expiration_date', sa.Date(), nullable=True),
-        sa.Column('conditions', sa.Text(), nullable=True),
-        sa.Column('paid', sa.Boolean(), nullable=False, server_default=sa.text('false')),
-        sa.Column('created_at', sa.DateTime(), nullable=False, server_default=sa.func.now()),
-        sa.Column('updated_at', sa.DateTime(), nullable=False, server_default=sa.func.now()),
-    )
-    op.create_unique_constraint('uq_permits_inspection_id', 'permits', ['inspection_id'])
+    insp = sa.inspect(op.get_bind())
+    tables = set(insp.get_table_names())
+    if 'permits' not in tables:
+        op.create_table(
+            'permits',
+            sa.Column('id', sa.BigInteger(), primary_key=True, index=True),
+            sa.Column('inspection_id', sa.BigInteger(), sa.ForeignKey('inspections.id'), nullable=False),
+            sa.Column('permit_type', sa.String(), nullable=True),
+            sa.Column('business_id', sa.BigInteger(), sa.ForeignKey('businesses.id'), nullable=True),
+            sa.Column('permit_number', sa.String(), nullable=True),
+            sa.Column('date_issued', sa.Date(), nullable=True),
+            sa.Column('expiration_date', sa.Date(), nullable=True),
+            sa.Column('conditions', sa.Text(), nullable=True),
+            sa.Column('paid', sa.Boolean(), nullable=False, server_default=sa.text('false')),
+            sa.Column('created_at', sa.DateTime(), nullable=False, server_default=sa.func.now()),
+            sa.Column('updated_at', sa.DateTime(), nullable=False, server_default=sa.func.now()),
+        )
+    # add unique only if missing
+    try:
+        uniques = {u.get('name') for u in insp.get_unique_constraints('permits')}
+    except Exception:
+        uniques = set()
+    if 'uq_permits_inspection_id' not in uniques:
+        op.create_unique_constraint('uq_permits_inspection_id', 'permits', ['inspection_id'])
 
 
 def downgrade():
-    op.drop_constraint('uq_permits_inspection_id', 'permits', type_='unique')
-    op.drop_table('permits')
+    insp = sa.inspect(op.get_bind())
+    tables = set()
+    try:
+        tables = set(insp.get_table_names())
+    except Exception:
+        pass
+    if 'permits' in tables:
+        try:
+            uniques = {u.get('name') for u in insp.get_unique_constraints('permits')}
+        except Exception:
+            uniques = set()
+        if 'uq_permits_inspection_id' in uniques:
+            op.drop_constraint('uq_permits_inspection_id', 'permits', type_='unique')
+        op.drop_table('permits')
