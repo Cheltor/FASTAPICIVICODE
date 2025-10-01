@@ -1,9 +1,9 @@
 
 from fastapi import APIRouter, HTTPException, Depends, Query, Body
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from typing import List
-from models import Contact
-from schemas import ContactCreate, ContactResponse
+from models import Contact, Inspection, Business
+from schemas import ContactCreate, ContactResponse, ContactDetailResponse, InspectionSummary, PermitSummary
 from database import get_db
 from sqlalchemy import or_
 
@@ -88,13 +88,42 @@ def search_contacts(
     return contacts
 
 # Get a specific contact by ID
-@router.get("/contacts/{contact_id}", response_model=ContactResponse)
+@router.get("/contacts/{contact_id}", response_model=ContactDetailResponse)
 def get_contact(contact_id: int, db: Session = Depends(get_db)):
-    contact = db.query(Contact).filter(Contact.id == contact_id).first()
+    contact = (
+        db.query(Contact)
+        .options(
+            selectinload(Contact.addresses),
+            selectinload(Contact.businesses).selectinload(Business.address),
+            selectinload(Contact.inspections).selectinload(Inspection.address),
+            selectinload(Contact.inspections).selectinload(Inspection.permits),
+        )
+        .filter(Contact.id == contact_id)
+        .first()
+    )
     if not contact:
         raise HTTPException(status_code=404, detail="Contact not found")
-    return contact
 
+    contact_data = ContactDetailResponse.model_validate(contact, from_attributes=True)
+    contact_data.inspections = [
+        InspectionSummary.model_validate(inspection, from_attributes=True)
+        for inspection in contact.inspections
+        if (inspection.source or '').lower() != 'complaint'
+    ]
+    contact_data.complaints = [
+        InspectionSummary.model_validate(inspection, from_attributes=True)
+        for inspection in contact.inspections
+        if (inspection.source or '').lower() == 'complaint'
+    ]
+    permit_map = {}
+    for inspection in contact.inspections:
+        for permit in (getattr(inspection, 'permits', None) or []):
+            permit_map[permit.id] = permit
+    contact_data.permits = [
+        PermitSummary.model_validate(permit, from_attributes=True)
+        for permit in permit_map.values()
+    ]
+    return contact_data
 # Update an existing contact
 @router.put("/contacts/{contact_id}", response_model=ContactResponse)
 def update_contact(contact_id: int, contact: ContactCreate = Body(...), db: Session = Depends(get_db)):
@@ -106,3 +135,5 @@ def update_contact(contact_id: int, contact: ContactCreate = Body(...), db: Sess
     db.commit()
     db.refresh(db_contact)
     return db_contact
+
+

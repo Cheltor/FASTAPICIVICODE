@@ -1,4 +1,4 @@
-from pydantic import BaseModel, validator
+from pydantic import BaseModel, validator, Field
 from typing import Optional, List
 from datetime import datetime, date
 from constants import DEADLINE_OPTIONS, DEADLINE_VALUES
@@ -119,6 +119,39 @@ class ContactResponse(ContactBase):
 
     class Config:
         from_attributes = True
+
+
+class InspectionSummary(BaseModel):
+    id: int
+    address_id: int
+    address: Optional[AddressResponse] = None
+    source: Optional[str] = None
+    status: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class PermitSummary(BaseModel):
+    id: int
+    inspection_id: int
+    permit_type: Optional[str] = None
+    permit_number: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ContactDetailResponse(ContactResponse):
+    addresses: List[AddressResponse] = Field(default_factory=list)
+    businesses: List[BusinessResponse] = Field(default_factory=list)
+    inspections: List[InspectionSummary] = Field(default_factory=list)
+    permits: List[PermitSummary] = Field(default_factory=list)
+    complaints: List[InspectionSummary] = Field(default_factory=list)
 
 # Pydantic schema for Violations
 class ViolationBase(BaseModel):

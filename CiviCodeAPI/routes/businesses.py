@@ -1,8 +1,9 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Query
 from datetime import date
 from sqlalchemy.orm import Session, joinedload
 from typing import List
 from models import Business, Contact, BusinessContact
+from sqlalchemy import or_
 from schemas import BusinessCreate, BusinessResponse, AddressResponse, ContactResponse
 from fastapi import Body
 from database import get_db
@@ -59,6 +60,20 @@ def remove_business_contact(business_id: int, contact_id: int, db: Session = Dep
     db.commit()
     business = db.query(Business).filter(Business.id == business_id).first()
     return business.contacts
+
+# Search businesses
+@router.get("/businesses/search", response_model=List[BusinessResponse])
+def search_businesses(
+    query: str = Query("", description="Search term for business name or trading-as"),
+    limit: int = Query(5, ge=1, le=50, description="Limit the number of results"),
+    db: Session = Depends(get_db)
+):
+    q = db.query(Business).options(joinedload(Business.address))
+    if query and query.strip():
+        like = f"%{query}%"
+        q = q.filter(or_(Business.name.ilike(like), Business.trading_as.ilike(like)))
+    businesses = q.order_by(Business.name.asc()).limit(limit).all()
+    return businesses
 
 # Get all businesses
 @router.get("/businesses/", response_model=List[BusinessResponse])
