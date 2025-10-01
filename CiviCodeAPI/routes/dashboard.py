@@ -273,6 +273,14 @@ def get_recent_activity(limit: int = Query(5, ge=1, le=50), db: Session = Depend
         .all()
     )
 
+    violations = (
+        db.query(Violation)
+        .options(joinedload(Violation.address))
+        .order_by(Violation.created_at.desc())
+        .limit(size)
+        .all()
+    )
+
     permits = (
         db.query(Permit)
         .options(joinedload(Permit.inspection).joinedload(Inspection.address))
@@ -326,7 +334,17 @@ def get_recent_activity(limit: int = Query(5, ge=1, le=50), db: Session = Depend
             )
         )
 
+    violation_items = []
+    for item in violations:
+        base = ViolationResponse.from_orm(item)
+        data = base.dict()
+        data['combadd'] = item.address.combadd if item.address else None
+        data['address_id'] = item.address_id
+        data['deadline_date'] = getattr(item, 'deadline_date', None)
+        violation_items.append(data)
+
     return RecentActivityResponse(
+        violations=violation_items,
         comments=comments,
         inspections=inspections,
         complaints=complaints,

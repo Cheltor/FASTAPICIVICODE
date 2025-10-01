@@ -338,6 +338,7 @@ class RecentActivityResponse(BaseModel):
     complaints: List[InspectionResponse]
     licenses: List[LicenseResponse]
     permits: List[PermitResponse]
+    violations: List[ViolationResponse]
 
 
 # Pydantic schema for ContactComments
