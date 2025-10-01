@@ -11,97 +11,164 @@ from models import (
     InspectionComment,
     CitationComment,
     ContactComment,
+    License,
+    Permit,
+    User,
 )
-from schemas import ViolationCreate, ViolationResponse, InspectionCreate, InspectionResponse, CitationCreate, CitationResponse, CommentCreate, CommentResponse
+from schemas import (
+    ViolationCreate,
+    ViolationResponse,
+    InspectionCreate,
+    InspectionResponse,
+    CitationCreate,
+    CitationResponse,
+    CommentCreate,
+    CommentResponse,
+    LicenseResponse,
+    PermitResponse,
+    RecentActivityResponse,
+)
 from database import get_db
 from utils import get_this_workweek, get_last_workweek
 
 router = APIRouter()
 
-@router.get("/counts/{user_id}", response_model=Dict[str, int])
-def get_counts(
-    user_id: int,
-    start_day: str = Query('mon', description="Week start day: mon|sun|sat"),
-    db: Session = Depends(get_db)
-):
+def _build_condition(column, user_ids):
+    if not user_ids:
+        return None
+    if len(user_ids) == 1:
+        return column == user_ids[0]
+    return column.in_(user_ids)
+
+
+def _apply_condition(query, condition):
+    return query.filter(condition) if condition is not None else query
+
+
+def _compute_counts(db, user_ids, start_day):
     start_of_this_week, end_of_this_week = get_this_workweek(start_day)
     start_of_last_week, end_of_last_week = get_last_workweek(start_day)
 
-    active_violations_count = db.query(func.count(Violation.id)).filter(Violation.user_id == user_id, Violation.status == 0).scalar()
-    # Sum comments across all comment-bearing tables for this user (all time)
+    if not user_ids:
+        return {
+            "active_violations_count": 0,
+            "comments_count": 0,
+            "inspections_count": 0,
+            "citations_count": 0,
+            "inspections_this_workweek_count": 0,
+            "inspections_last_workweek_count": 0,
+            "violations_this_workweek_count": 0,
+            "violations_last_workweek_count": 0,
+            "comments_this_workweek_count": 0,
+            "comments_last_workweek_count": 0,
+        }
+
+    violation_user_condition = _build_condition(Violation.user_id, user_ids)
+    inspection_user_condition = _build_condition(Inspection.inspector_id, user_ids)
+    citation_user_condition = _build_condition(Citation.user_id, user_ids)
+    comment_user_condition = _build_condition(Comment.user_id, user_ids)
+    violation_comment_user_condition = _build_condition(ViolationComment.user_id, user_ids)
+    inspection_comment_user_condition = _build_condition(InspectionComment.user_id, user_ids)
+    citation_comment_user_condition = _build_condition(CitationComment.user_id, user_ids)
+    contact_comment_user_condition = _build_condition(ContactComment.user_id, user_ids)
+
+    active_violations_count = _apply_condition(
+        db.query(func.count(Violation.id)),
+        violation_user_condition,
+    ).filter(Violation.status == 0).scalar() or 0
+
     comments_count = (
-        (db.query(func.count(Comment.id)).filter(Comment.user_id == user_id).scalar() or 0)
-        + (db.query(func.count(ViolationComment.id)).filter(ViolationComment.user_id == user_id).scalar() or 0)
-        + (db.query(func.count(InspectionComment.id)).filter(InspectionComment.user_id == user_id).scalar() or 0)
-        + (db.query(func.count(CitationComment.id)).filter(CitationComment.user_id == user_id).scalar() or 0)
-        + (db.query(func.count(ContactComment.id)).filter(ContactComment.user_id == user_id).scalar() or 0)
-    )
-    inspections_count = db.query(func.count(Inspection.id)).filter(Inspection.inspector_id == user_id).scalar()
-    citations_count = db.query(func.count(Citation.id)).filter(Citation.user_id == user_id).scalar()
-
-    # Inspections counted when marked completed within the week window by this inspector
-    inspections_this_workweek_count = (
-        db.query(func.count(Inspection.id))
-        .filter(
-            Inspection.inspector_id == user_id,
-            # Treat variations of completed; also allow 'Satisfactory' as completed
-            or_(
-                func.lower(Inspection.status) == 'completed',
-                func.lower(Inspection.status) == 'satisfactory',
-            ),
-            Inspection.updated_at >= start_of_this_week,
-            Inspection.updated_at <= end_of_this_week,
-        )
-        .scalar()
-    )
-    inspections_last_workweek_count = (
-        db.query(func.count(Inspection.id))
-        .filter(
-            Inspection.inspector_id == user_id,
-            or_(
-                func.lower(Inspection.status) == 'completed',
-                func.lower(Inspection.status) == 'satisfactory',
-            ),
-            Inspection.updated_at >= start_of_last_week,
-            Inspection.updated_at <= end_of_last_week,
-        )
-        .scalar()
+        (_apply_condition(db.query(func.count(Comment.id)), comment_user_condition).scalar() or 0)
+        + (_apply_condition(db.query(func.count(ViolationComment.id)), violation_comment_user_condition).scalar() or 0)
+        + (_apply_condition(db.query(func.count(InspectionComment.id)), inspection_comment_user_condition).scalar() or 0)
+        + (_apply_condition(db.query(func.count(CitationComment.id)), citation_comment_user_condition).scalar() or 0)
+        + (_apply_condition(db.query(func.count(ContactComment.id)), contact_comment_user_condition).scalar() or 0)
     )
 
-    # Violations counted by creation date (created by this user)
-    violations_this_workweek_count = (
-        db.query(func.count(Violation.id))
-        .filter(
-            Violation.user_id == user_id,
-            Violation.created_at >= start_of_this_week,
-            Violation.created_at <= end_of_this_week,
-        )
-        .scalar()
-    )
-    violations_last_workweek_count = (
-        db.query(func.count(Violation.id))
-        .filter(
-            Violation.user_id == user_id,
-            Violation.created_at >= start_of_last_week,
-            Violation.created_at <= end_of_last_week,
-        )
-        .scalar()
-    )
+    inspections_count = _apply_condition(
+        db.query(func.count(Inspection.id)),
+        inspection_user_condition,
+    ).scalar() or 0
 
-    # Comments counted across all comment tables by creation date
+    citations_count = _apply_condition(
+        db.query(func.count(Citation.id)),
+        citation_user_condition,
+    ).scalar() or 0
+
+    inspections_this_workweek_count = _apply_condition(
+        db.query(func.count(Inspection.id)),
+        inspection_user_condition,
+    ).filter(
+        or_(
+            func.lower(Inspection.status) == 'completed',
+            func.lower(Inspection.status) == 'satisfactory',
+        ),
+        Inspection.updated_at >= start_of_this_week,
+        Inspection.updated_at <= end_of_this_week,
+    ).scalar() or 0
+
+    inspections_last_workweek_count = _apply_condition(
+        db.query(func.count(Inspection.id)),
+        inspection_user_condition,
+    ).filter(
+        or_(
+            func.lower(Inspection.status) == 'completed',
+            func.lower(Inspection.status) == 'satisfactory',
+        ),
+        Inspection.updated_at >= start_of_last_week,
+        Inspection.updated_at <= end_of_last_week,
+    ).scalar() or 0
+
+    violations_this_workweek_count = _apply_condition(
+        db.query(func.count(Violation.id)),
+        violation_user_condition,
+    ).filter(
+        Violation.created_at >= start_of_this_week,
+        Violation.created_at <= end_of_this_week,
+    ).scalar() or 0
+
+    violations_last_workweek_count = _apply_condition(
+        db.query(func.count(Violation.id)),
+        violation_user_condition,
+    ).filter(
+        Violation.created_at >= start_of_last_week,
+        Violation.created_at <= end_of_last_week,
+    ).scalar() or 0
+
     comments_this_workweek_count = (
-        (db.query(func.count(Comment.id)).filter(Comment.user_id == user_id, Comment.created_at >= start_of_this_week, Comment.created_at <= end_of_this_week).scalar() or 0)
-        + (db.query(func.count(ViolationComment.id)).filter(ViolationComment.user_id == user_id, ViolationComment.created_at >= start_of_this_week, ViolationComment.created_at <= end_of_this_week).scalar() or 0)
-        + (db.query(func.count(InspectionComment.id)).filter(InspectionComment.user_id == user_id, InspectionComment.created_at >= start_of_this_week, InspectionComment.created_at <= end_of_this_week).scalar() or 0)
-        + (db.query(func.count(CitationComment.id)).filter(CitationComment.user_id == user_id, CitationComment.created_at >= start_of_this_week, CitationComment.created_at <= end_of_this_week).scalar() or 0)
-        + (db.query(func.count(ContactComment.id)).filter(ContactComment.user_id == user_id, ContactComment.created_at >= start_of_this_week, ContactComment.created_at <= end_of_this_week).scalar() or 0)
+        (_apply_condition(db.query(func.count(Comment.id)), comment_user_condition)
+         .filter(Comment.created_at >= start_of_this_week, Comment.created_at <= end_of_this_week)
+         .scalar() or 0)
+        + (_apply_condition(db.query(func.count(ViolationComment.id)), violation_comment_user_condition)
+           .filter(ViolationComment.created_at >= start_of_this_week, ViolationComment.created_at <= end_of_this_week)
+           .scalar() or 0)
+        + (_apply_condition(db.query(func.count(InspectionComment.id)), inspection_comment_user_condition)
+           .filter(InspectionComment.created_at >= start_of_this_week, InspectionComment.created_at <= end_of_this_week)
+           .scalar() or 0)
+        + (_apply_condition(db.query(func.count(CitationComment.id)), citation_comment_user_condition)
+           .filter(CitationComment.created_at >= start_of_this_week, CitationComment.created_at <= end_of_this_week)
+           .scalar() or 0)
+        + (_apply_condition(db.query(func.count(ContactComment.id)), contact_comment_user_condition)
+           .filter(ContactComment.created_at >= start_of_this_week, ContactComment.created_at <= end_of_this_week)
+           .scalar() or 0)
     )
+
     comments_last_workweek_count = (
-        (db.query(func.count(Comment.id)).filter(Comment.user_id == user_id, Comment.created_at >= start_of_last_week, Comment.created_at <= end_of_last_week).scalar() or 0)
-        + (db.query(func.count(ViolationComment.id)).filter(ViolationComment.user_id == user_id, ViolationComment.created_at >= start_of_last_week, ViolationComment.created_at <= end_of_last_week).scalar() or 0)
-        + (db.query(func.count(InspectionComment.id)).filter(InspectionComment.user_id == user_id, InspectionComment.created_at >= start_of_last_week, InspectionComment.created_at <= end_of_last_week).scalar() or 0)
-        + (db.query(func.count(CitationComment.id)).filter(CitationComment.user_id == user_id, CitationComment.created_at >= start_of_last_week, CitationComment.created_at <= end_of_last_week).scalar() or 0)
-        + (db.query(func.count(ContactComment.id)).filter(ContactComment.user_id == user_id, ContactComment.created_at >= start_of_last_week, ContactComment.created_at <= end_of_last_week).scalar() or 0)
+        (_apply_condition(db.query(func.count(Comment.id)), comment_user_condition)
+         .filter(Comment.created_at >= start_of_last_week, Comment.created_at <= end_of_last_week)
+         .scalar() or 0)
+        + (_apply_condition(db.query(func.count(ViolationComment.id)), violation_comment_user_condition)
+           .filter(ViolationComment.created_at >= start_of_last_week, ViolationComment.created_at <= end_of_last_week)
+           .scalar() or 0)
+        + (_apply_condition(db.query(func.count(InspectionComment.id)), inspection_comment_user_condition)
+           .filter(InspectionComment.created_at >= start_of_last_week, InspectionComment.created_at <= end_of_last_week)
+           .scalar() or 0)
+        + (_apply_condition(db.query(func.count(CitationComment.id)), citation_comment_user_condition)
+           .filter(CitationComment.created_at >= start_of_last_week, CitationComment.created_at <= end_of_last_week)
+           .scalar() or 0)
+        + (_apply_condition(db.query(func.count(ContactComment.id)), contact_comment_user_condition)
+           .filter(ContactComment.created_at >= start_of_last_week, ContactComment.created_at <= end_of_last_week)
+           .scalar() or 0)
     )
 
     return {
@@ -117,7 +184,26 @@ def get_counts(
         "comments_last_workweek_count": comments_last_workweek_count,
     }
 
-# Get 10 most recent comments by user
+
+@router.get("/counts/{user_id}", response_model=Dict[str, int])
+def get_counts(
+    user_id: int,
+    start_day: str = Query('mon', description="Week start day: mon|sun|sat"),
+    db: Session = Depends(get_db)
+):
+    return _compute_counts(db, [user_id], start_day)
+
+
+@router.get("/counts", response_model=Dict[str, int])
+def get_counts_for_role(
+    role: int = Query(..., description="Aggregate counts for this user role (e.g., 1 for ONS)"),
+    start_day: str = Query('mon', description="Week start day: mon|sun|sat"),
+    db: Session = Depends(get_db)
+):
+    user_ids = [user.id for user in db.query(User).filter(User.role == role).all()]
+    return _compute_counts(db, user_ids, start_day)
+
+
 @router.get("/dash/comments/{user_id}", response_model=List[CommentResponse])
 def get_recent_comments(user_id: int, db: Session = Depends(get_db)):
     comments = db.query(Comment).filter(Comment.user_id == user_id).order_by(Comment.updated_at.desc()).limit(10).all()
@@ -143,6 +229,110 @@ def get_active_violations(user_id: int, db: Session = Depends(get_db)):
         response.append(violation_dict)
     
     return response
+
+
+@router.get("/dash/recent", response_model=RecentActivityResponse)
+def get_recent_activity(limit: int = Query(5, ge=1, le=50), db: Session = Depends(get_db)):
+    size = max(1, min(limit, 50))
+
+    comments = (
+        db.query(Comment)
+        .options(
+            joinedload(Comment.user),
+            joinedload(Comment.address),
+            joinedload(Comment.unit),
+        )
+        .order_by(Comment.created_at.desc())
+        .limit(size)
+        .all()
+    )
+
+    inspections = (
+        db.query(Inspection)
+        .options(joinedload(Inspection.address))
+        .filter(Inspection.source != 'Complaint')
+        .order_by(Inspection.created_at.desc())
+        .limit(size)
+        .all()
+    )
+
+    complaints = (
+        db.query(Inspection)
+        .options(joinedload(Inspection.address))
+        .filter(Inspection.source == 'Complaint')
+        .order_by(Inspection.created_at.desc())
+        .limit(size)
+        .all()
+    )
+
+    licenses = (
+        db.query(License)
+        .options(joinedload(License.inspection).joinedload(Inspection.address))
+        .order_by(License.created_at.desc())
+        .limit(size)
+        .all()
+    )
+
+    permits = (
+        db.query(Permit)
+        .options(joinedload(Permit.inspection).joinedload(Inspection.address))
+        .order_by(Permit.created_at.desc())
+        .limit(size)
+        .all()
+    )
+
+    license_items = []
+    for item in licenses:
+        address = item.inspection.address if item.inspection and item.inspection.address else None
+        license_items.append(
+            LicenseResponse(
+                id=item.id,
+                inspection_id=item.inspection_id,
+                sent=item.sent,
+                paid=item.paid,
+                license_type=item.license_type,
+                business_id=item.business_id,
+                date_issued=item.date_issued,
+                expiration_date=item.expiration_date,
+                fiscal_year=item.fiscal_year,
+                license_number=item.license_number,
+                conditions=item.conditions,
+                revoked=item.revoked,
+                created_at=item.created_at,
+                updated_at=item.updated_at,
+                address_id=address.id if address else None,
+                combadd=address.combadd if address else None,
+            )
+        )
+
+    permit_items = []
+    for item in permits:
+        address = item.inspection.address if item.inspection and item.inspection.address else None
+        permit_items.append(
+            PermitResponse(
+                id=item.id,
+                inspection_id=item.inspection_id,
+                permit_type=item.permit_type,
+                business_id=item.business_id,
+                permit_number=item.permit_number,
+                date_issued=item.date_issued,
+                expiration_date=item.expiration_date,
+                conditions=item.conditions,
+                paid=item.paid,
+                created_at=item.created_at,
+                updated_at=item.updated_at,
+                address_id=address.id if address else None,
+                combadd=address.combadd if address else None,
+            )
+        )
+
+    return RecentActivityResponse(
+        comments=comments,
+        inspections=inspections,
+        complaints=complaints,
+        licenses=license_items,
+        permits=permit_items,
+    )
 
 
 # Get all inspections for a user where the status is not 2 (completed)

@@ -382,6 +382,8 @@ class Inspection(Base):
     inspector = relationship("User", back_populates="inspections")
     contact = relationship("Contact", back_populates="inspections")
     areas = relationship("Area", back_populates="inspection", cascade="all, delete-orphan")  # Inspection has many Areas
+    licenses = relationship("License", back_populates="inspection")
+    permits = relationship("Permit", back_populates="inspection")
 
 # Licenses
 class License(Base):
@@ -402,6 +404,8 @@ class License(Base):
     created_at = Column(DateTime, default=func.now(), nullable=False)  # Auto-generate created_at timestamp
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)  # Auto-update updated_at timestamp
 
+    inspection = relationship("Inspection", back_populates="licenses")
+
 # Permits
 class Permit(Base):
     __tablename__ = "permits"
@@ -418,6 +422,8 @@ class Permit(Base):
     paid = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=func.now(), nullable=False)  # Auto-generate created_at timestamp
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)  # Auto-update updated_at timestamp
+
+    inspection = relationship("Inspection", back_populates="permits")
     __table_args__ = (
         UniqueConstraint('inspection_id', name='uq_permits_inspection_id'),
     )

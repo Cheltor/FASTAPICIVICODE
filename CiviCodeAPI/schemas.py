@@ -278,6 +278,9 @@ class LicenseBase(BaseModel):
     date_issued: Optional[date] = None
     expiration_date: Optional[date] = None
     fiscal_year: Optional[str] = None
+    license_number: Optional[str] = None
+    conditions: Optional[str] = None
+    revoked: Optional[bool] = None
 
 class LicenseCreate(LicenseBase):
     pass
@@ -327,6 +330,15 @@ class PermitResponse(PermitBase):
 
     class Config:
         from_attributes = True
+
+
+class RecentActivityResponse(BaseModel):
+    comments: List[CommentResponse]
+    inspections: List[InspectionResponse]
+    complaints: List[InspectionResponse]
+    licenses: List[LicenseResponse]
+    permits: List[PermitResponse]
+
 
 # Pydantic schema for ContactComments
 class ContactCommentBase(BaseModel):
