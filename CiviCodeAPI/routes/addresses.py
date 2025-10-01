@@ -5,6 +5,7 @@ from typing import List, Optional
 from sqlalchemy import or_, func
 from sqlalchemy.exc import IntegrityError
 from storage import blob_service_client, CONTAINER_NAME
+from media_service import ensure_blob_browser_safe
 from database import get_db  # Ensure get_db is imported before use
 from models import Address, Comment, Violation, Inspection, Unit, ActiveStorageAttachment, ActiveStorageBlob, Contact, AddressContact
 import models
@@ -426,10 +427,20 @@ def get_address_photos(address_id: int, db: Session = Depends(get_db)):
         for attachment in attachments:
             blob = db.query(ActiveStorageBlob).filter_by(id=attachment.blob_id).first()
             if blob:
+                try:
+                    blob = ensure_blob_browser_safe(db, blob)
+                except Exception:
+                    pass
+                url = f"https://{blob_service_client.account_name}.blob.core.windows.net/{CONTAINER_NAME}/{blob.key}"
+                poster_url = None
+                if (blob.content_type or "").startswith("video/") and blob.key.lower().endswith('.mp4'):
+                    base = blob.key[:-4]
+                    poster_url = f"https://{blob_service_client.account_name}.blob.core.windows.net/{CONTAINER_NAME}/{base}-poster.jpg"
                 photos.append({
                     "filename": blob.filename,
                     "content_type": blob.content_type,
-                    "url": f"https://{blob_service_client.account_name}.blob.core.windows.net/{CONTAINER_NAME}/{blob.key}"
+                    "url": url,
+                    "poster_url": poster_url,
                 })
 
     return photos

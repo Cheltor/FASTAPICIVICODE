@@ -14,6 +14,7 @@ from schemas import (
 )
 from database import get_db
 from storage import blob_service_client, container_client, account_name, account_key, CONTAINER_NAME
+from image_utils import normalize_image_for_web
 import os
 import logging
 import uuid
@@ -112,7 +113,13 @@ def get_comment_photos(comment_id: int, download: bool = False, db: Session = De
         if not blob:
             continue  # Skip if no blob found
 
-        # Generate a SAS token for the blob
+            # Ensure browser-safe; convert on-demand if needed
+            try:
+                blob = ensure_blob_browser_safe(db, blob)
+            except Exception as e:
+                logger.error(f"On-demand conversion failed for blob {blob.key}: {e}")
+
+            # Generate a SAS token for the blob
         try:
             sas_token = generate_blob_sas(
                 account_name=account_name,
@@ -130,12 +137,30 @@ def get_comment_photos(comment_id: int, download: bool = False, db: Session = De
 
         # Construct the secure URL with SAS token
         blob_url = f"https://{account_name}.blob.core.windows.net/{CONTAINER_NAME}/{blob.key}?{sas_token}"
+        poster_url = None
+        if (blob.content_type or "").startswith("video/") and blob.key.lower().endswith('.mp4'):
+            base = blob.key[:-4]
+            poster_key = f"{base}-poster.jpg"
+            try:
+                poster_sas = generate_blob_sas(
+                    account_name=account_name,
+                    container_name=CONTAINER_NAME,
+                    blob_name=poster_key,
+                    account_key=account_key,
+                    permission=BlobSasPermissions(read=True),
+                    start=datetime.utcnow() - timedelta(minutes=5),
+                    expiry=datetime.utcnow() + timedelta(hours=1),
+                )
+                poster_url = f"https://{account_name}.blob.core.windows.net/{CONTAINER_NAME}/{poster_key}?{poster_sas}"
+            except Exception:
+                poster_url = None
 
         # Append the photo details to the list
         photos.append({
             "filename": blob.filename,
             "content_type": blob.content_type,
             "url": blob_url,
+            "poster_url": poster_url,
         })
 
     return photos
@@ -158,18 +183,19 @@ async def create_address_comment(
 
     for file in files:
         try:
-            content_bytes = await file.read()
-            blob_key = f"address-comments/{new_comment.id}/{uuid.uuid4()}-{file.filename}"
+            raw_bytes = await file.read()
+            normalized_bytes, norm_filename, norm_ct = normalize_image_for_web(raw_bytes, file.filename, file.content_type)
+            blob_key = f"address-comments/{new_comment.id}/{uuid.uuid4()}-{norm_filename}"
             blob_client = blob_service_client.get_blob_client(container=CONTAINER_NAME, blob=blob_key)
-            blob_client.upload_blob(content_bytes, overwrite=True, content_type=file.content_type)
+            blob_client.upload_blob(normalized_bytes, overwrite=True, content_type=norm_ct)
 
             blob_row = ActiveStorageBlob(
                 key=blob_key,
-                filename=file.filename,
-                content_type=file.content_type,
+                filename=norm_filename,
+                content_type=norm_ct,
                 meta_data=None,
                 service_name="azure",
-                byte_size=len(content_bytes),
+                byte_size=len(normalized_bytes),
                 checksum=None,
                 created_at=datetime.utcnow(),
             )
@@ -241,19 +267,20 @@ async def create_contact_comment(
     # Upload any attachments and create ActiveStorage records
     for file in files:
         try:
-            content = await file.read()
-            blob_key = f"contact-comments/{new_comment.id}/{uuid.uuid4()}-{file.filename}"
+            raw = await file.read()
+            normalized_bytes, norm_filename, norm_ct = normalize_image_for_web(raw, file.filename, file.content_type)
+            blob_key = f"contact-comments/{new_comment.id}/{uuid.uuid4()}-{norm_filename}"
             blob_client = blob_service_client.get_blob_client(container=CONTAINER_NAME, blob=blob_key)
-            blob_client.upload_blob(content, overwrite=True, content_type=file.content_type)
+            blob_client.upload_blob(normalized_bytes, overwrite=True, content_type=norm_ct)
 
             # Create ActiveStorageBlob entry
             blob_row = ActiveStorageBlob(
                 key=blob_key,
-                filename=file.filename,
-                content_type=file.content_type,
+                filename=norm_filename,
+                content_type=norm_ct,
                 meta_data=None,
                 service_name="azure",
-                byte_size=len(content),
+                byte_size=len(normalized_bytes),
                 checksum=None,
                 created_at=datetime.utcnow(),
             )
@@ -389,18 +416,19 @@ async def create_unit_comment(
 
     for file in files:
         try:
-            content_bytes = await file.read()
-            blob_key = f"unit-comments/{new_comment.id}/{uuid.uuid4()}-{file.filename}"
+            raw_bytes = await file.read()
+            normalized_bytes, norm_filename, norm_ct = normalize_image_for_web(raw_bytes, file.filename, file.content_type)
+            blob_key = f"unit-comments/{new_comment.id}/{uuid.uuid4()}-{norm_filename}"
             blob_client = blob_service_client.get_blob_client(container=CONTAINER_NAME, blob=blob_key)
-            blob_client.upload_blob(content_bytes, overwrite=True, content_type=file.content_type)
+            blob_client.upload_blob(normalized_bytes, overwrite=True, content_type=norm_ct)
 
             blob_row = ActiveStorageBlob(
                 key=blob_key,
-                filename=file.filename,
-                content_type=file.content_type,
+                filename=norm_filename,
+                content_type=norm_ct,
                 meta_data=None,
                 service_name="azure",
-                byte_size=len(content_bytes),
+                byte_size=len(normalized_bytes),
                 checksum=None,
                 created_at=datetime.utcnow(),
             )
