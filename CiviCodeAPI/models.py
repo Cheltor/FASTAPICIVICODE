@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, Float, DateTime, ForeignKey, Text, BigInteger, Date, func, UniqueConstraint
+﻿from sqlalchemy import Column, Integer, String, Boolean, Float, DateTime, ForeignKey, Text, BigInteger, Date, func, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime, timedelta
@@ -86,7 +86,7 @@ class Address(Base):
     violations = relationship("Violation", back_populates="address", cascade="all, delete-orphan") # Address has many Violations
     businesses = relationship("Business", back_populates="address", cascade="all, delete-orphan") # Address has many Businesses
     address_contacts = relationship("AddressContact", back_populates="address", cascade="all, delete-orphan")
-    contacts = relationship("Contact", secondary="address_contacts", back_populates="addresses")
+    contacts = relationship("Contact", secondary="address_contacts", back_populates="addresses", overlaps="address_contacts")
 
 # AddressContacts
 class AddressContact(Base):
@@ -98,8 +98,8 @@ class AddressContact(Base):
     created_at = Column(DateTime, default=func.now(), nullable=False)  # Auto-generate created_at timestamp
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)  # Auto-update updated_at timestamp
 
-    address = relationship("Address", back_populates="address_contacts")
-    contact = relationship("Contact", back_populates="address_associations")
+    address = relationship("Address", back_populates="address_contacts", overlaps="contacts")
+    contact = relationship("Contact", back_populates="address_associations", overlaps="addresses,contacts")
 
 
 # Areas
@@ -154,7 +154,7 @@ class Business(Base):
     # Relationships
     address = relationship("Address", back_populates="businesses")  # Define relationship to Address
     business_contacts = relationship("BusinessContact", back_populates="business", cascade="all, delete-orphan")
-    contacts = relationship("Contact", secondary="business_contacts", back_populates="businesses")
+    contacts = relationship("Contact", secondary="business_contacts", back_populates="businesses", overlaps="business_contacts")
 
 # BusinessContacts
 class BusinessContact(Base):
@@ -166,8 +166,8 @@ class BusinessContact(Base):
     created_at = Column(DateTime, default=func.now(), nullable=False)  # Auto-generate created_at timestamp
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)  # Auto-update updated_at timestamp
 
-    business = relationship("Business", back_populates="business_contacts")
-    contact = relationship("Contact", back_populates="business_associations")
+    business = relationship("Business", back_populates="business_contacts", overlaps="contacts")
+    contact = relationship("Contact", back_populates="business_associations", overlaps="businesses,contacts")
 
 
 # Citations
@@ -279,10 +279,10 @@ class Contact(Base):
 
     # Relationships
     inspections = relationship("Inspection", back_populates="contact")  # Define relationship to Inspections
-    address_associations = relationship("AddressContact", back_populates="contact", cascade="all, delete-orphan")
-    addresses = relationship("Address", secondary="address_contacts", back_populates="contacts")
-    business_associations = relationship("BusinessContact", back_populates="contact", cascade="all, delete-orphan")
-    businesses = relationship("Business", secondary="business_contacts", back_populates="contacts")
+    address_associations = relationship("AddressContact", back_populates="contact", cascade="all, delete-orphan", overlaps="addresses,contacts")
+    addresses = relationship("Address", secondary="address_contacts", back_populates="contacts", overlaps="address_associations,contact,address,address_contacts")
+    business_associations = relationship("BusinessContact", back_populates="contact", cascade="all, delete-orphan", overlaps="businesses,contacts")
+    businesses = relationship("Business", secondary="business_contacts", back_populates="contacts", overlaps="business_associations,business,business_contacts")
 
 # ContactComments
 class ContactComment(Base):

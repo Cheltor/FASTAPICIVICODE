@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends, Query
+﻿from fastapi import APIRouter, HTTPException, Depends, Query
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, or_
 from typing import List, Dict
@@ -27,6 +27,7 @@ from schemas import (
     LicenseResponse,
     PermitResponse,
     RecentActivityResponse,
+    OasDashboardResponse,
 )
 from database import get_db
 from utils import get_this_workweek, get_last_workweek
@@ -353,11 +354,105 @@ def get_recent_activity(limit: int = Query(5, ge=1, le=50), db: Session = Depend
     )
 
 
+
+@router.get("/dash/oas/overview", response_model=OasDashboardResponse)
+def get_oas_dashboard_overview(db: Session = Depends(get_db)):
+    PAGE_LIMIT = 10
+    closed_statuses = {"satisfactory", "no violation found", "closed", "completed", "resolved"}
+    status_lower = func.lower(Inspection.status)
+
+    complaint_records = (
+        db.query(Inspection)
+        .options(joinedload(Inspection.address))
+        .filter(func.lower(Inspection.source) == "complaint")
+        .filter(
+            or_(
+                Inspection.status.is_(None),
+                status_lower.notin_(tuple(closed_statuses)),
+            )
+        )
+        .order_by(Inspection.created_at.desc())
+        .limit(PAGE_LIMIT)
+        .all()
+    )
+
+    pending_complaints = [InspectionResponse.from_orm(record) for record in complaint_records]
+
+    violation_records = (
+        db.query(Violation)
+        .options(joinedload(Violation.address))
+        .filter(Violation.status == 0)
+        .order_by(Violation.updated_at.desc())
+        .limit(PAGE_LIMIT)
+        .all()
+    )
+
+    active_violations: List[ViolationResponse] = []
+    for violation in violation_records:
+        violation_model = ViolationResponse.from_orm(violation)
+        violation_model.combadd = violation.address.combadd if violation.address else None
+        violation_model.deadline_date = getattr(violation, "deadline_date", None)
+        active_violations.append(violation_model)
+
+    base_license_query = (
+        db.query(License)
+        .options(joinedload(License.inspection).joinedload(Inspection.address))
+        .order_by(License.created_at.desc())
+    )
+
+    licenses_needing_payment = (
+        base_license_query
+        .filter(or_(License.paid.is_(False), License.paid.is_(None)))
+        .limit(PAGE_LIMIT)
+        .all()
+    )
+
+    licenses_needing_sending = (
+        base_license_query
+        .filter(or_(License.sent.is_(False), License.sent.is_(None)))
+        .limit(PAGE_LIMIT)
+        .all()
+    )
+
+    def to_license_response(records: List[License]) -> List[LicenseResponse]:
+        items: List[LicenseResponse] = []
+        for record in records:
+            address = record.inspection.address if record.inspection and record.inspection.address else None
+            items.append(
+                LicenseResponse(
+                    id=record.id,
+                    inspection_id=record.inspection_id,
+                    sent=record.sent,
+                    paid=record.paid,
+                    license_type=record.license_type,
+                    business_id=record.business_id,
+                    date_issued=record.date_issued,
+                    expiration_date=record.expiration_date,
+                    fiscal_year=record.fiscal_year,
+                    license_number=record.license_number,
+                    conditions=record.conditions,
+                    revoked=record.revoked,
+                    created_at=record.created_at,
+                    updated_at=record.updated_at,
+                    address_id=address.id if address else None,
+                    combadd=address.combadd if address else None,
+                )
+            )
+        return items
+
+    return OasDashboardResponse(
+        pending_complaints=pending_complaints,
+        active_violations=active_violations,
+        licenses_not_paid=to_license_response(licenses_needing_payment),
+        licenses_not_sent=to_license_response(licenses_needing_sending),
+    )
+
 # Get all inspections for a user where the status is not 2 (completed)
 @router.get("/dash/inspections/{user_id}", response_model=List[InspectionResponse])
 def get_inspections(user_id: int, db: Session = Depends(get_db)):
     inspections = db.query(Inspection).filter(Inspection.inspector_id == user_id, Inspection.status.is_(None)).all()
     return inspections
+
 
 
 

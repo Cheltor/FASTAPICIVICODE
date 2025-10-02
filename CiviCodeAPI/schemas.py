@@ -374,6 +374,13 @@ class RecentActivityResponse(BaseModel):
     violations: List[ViolationResponse]
 
 
+class OasDashboardResponse(BaseModel):
+    pending_complaints: List[InspectionResponse]
+    active_violations: List[ViolationResponse]
+    licenses_not_paid: List[LicenseResponse]
+    licenses_not_sent: List[LicenseResponse]
+
+
 # Pydantic schema for ContactComments
 class ContactCommentBase(BaseModel):
     contact_id: int
