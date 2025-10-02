@@ -3,7 +3,7 @@ from datetime import date
 from sqlalchemy.orm import Session, joinedload
 from typing import List
 from models import Business, Contact, BusinessContact
-from sqlalchemy import or_
+from sqlalchemy import or_, func
 from schemas import BusinessCreate, BusinessResponse, AddressResponse, ContactResponse
 from fastapi import Body
 from database import get_db
@@ -120,6 +120,16 @@ def get_businesses(skip: int = 0, db: Session = Depends(get_db)):
 # Create a new business
 @router.post("/businesses/", response_model=BusinessResponse)
 def create_business(business: BusinessCreate, db: Session = Depends(get_db)):
+    name = (business.name or '').strip()
+    if name:
+        existing = (
+            db.query(Business)
+            .filter(func.lower(Business.name) == name.lower())
+            .first()
+        )
+        if existing:
+            raise HTTPException(status_code=409, detail='Business name already exists')
+
     new_business = Business(**business.dict())
     db.add(new_business)
     db.commit()
@@ -143,6 +153,21 @@ def update_business(business_id: int, data: dict = Body(...), db: Session = Depe
 
     # Allowed keys to update
     allowed = {"name", "website", "email", "phone", "trading_as", "unit_id", "is_closed", "opened_on", "employee_count"}
+
+    if 'name' in data and data['name'] not in (None, ''):
+        trimmed_name = str(data['name']).strip()
+        if trimmed_name:
+            existing = (
+                db.query(Business)
+                .filter(func.lower(Business.name) == trimmed_name.lower(), Business.id != business_id)
+                .first()
+            )
+            if existing:
+                raise HTTPException(status_code=409, detail='Business name already exists')
+            data['name'] = trimmed_name
+        else:
+            data['name'] = ''
+
     for key, value in data.items():
         if key not in allowed:
             continue

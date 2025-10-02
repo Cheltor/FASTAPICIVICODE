@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from typing import List
 from models import Code
 from schemas import CodeCreate, CodeResponse
@@ -16,6 +17,17 @@ def get_codes(db: Session = Depends(get_db)):
 # Create a new code
 @router.post("/codes/", response_model=CodeResponse)
 def create_code(code: CodeCreate, db: Session = Depends(get_db)):
+    chapter = (code.chapter or '').strip()
+    section = (code.section or '').strip()
+    if chapter and section:
+        conflict = (
+            db.query(Code)
+            .filter(func.lower(Code.chapter) == chapter.lower(), func.lower(Code.section) == section.lower())
+            .first()
+        )
+        if conflict:
+            raise HTTPException(status_code=409, detail='Code with this chapter and section already exists')
+
     new_code = Code(**code.dict())
     db.add(new_code)
     db.commit()

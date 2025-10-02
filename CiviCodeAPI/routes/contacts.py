@@ -5,7 +5,7 @@ from typing import List
 from models import Contact, Inspection, Business
 from schemas import ContactCreate, ContactResponse, ContactDetailResponse, InspectionSummary, PermitSummary
 from database import get_db
-from sqlalchemy import or_
+from sqlalchemy import or_, func
 
 router = APIRouter()
 
@@ -35,6 +35,16 @@ def get_contacts(
 # Create a new contact
 @router.post("/contacts/", response_model=ContactResponse)
 def create_contact(contact: ContactCreate, db: Session = Depends(get_db)):
+        name = (contact.name or '').strip()
+        if name:
+            name_conflict = (
+                db.query(Contact)
+                .filter(func.lower(Contact.name) == name.lower())
+                .first()
+            )
+            if name_conflict:
+                raise HTTPException(status_code=409, detail='Contact name already exists')
+
         # Normalize email and phone for comparison
         email = (contact.email or "").strip().lower()
         phone_digits = "".join([c for c in (contact.phone or "") if c.isdigit()])
@@ -130,7 +140,24 @@ def update_contact(contact_id: int, contact: ContactCreate = Body(...), db: Sess
     db_contact = db.query(Contact).filter(Contact.id == contact_id).first()
     if not db_contact:
         raise HTTPException(status_code=404, detail="Contact not found")
-    for field, value in contact.dict().items():
+
+    data = contact.dict()
+    name_value = data.get('name')
+    if name_value not in (None, ''):
+        trimmed = str(name_value).strip()
+        if trimmed:
+            conflict = (
+                db.query(Contact)
+                .filter(func.lower(Contact.name) == trimmed.lower(), Contact.id != contact_id)
+                .first()
+            )
+            if conflict:
+                raise HTTPException(status_code=409, detail='Contact name already exists')
+            data['name'] = trimmed
+        else:
+            data['name'] = ''
+
+    for field, value in data.items():
         setattr(db_contact, field, value)
     db.commit()
     db.refresh(db_contact)

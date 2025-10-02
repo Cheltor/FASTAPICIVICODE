@@ -303,7 +303,7 @@ class CodeResponse(CodeBase):
 
 # Licenses
 class LicenseBase(BaseModel):
-    inspection_id: int
+    inspection_id: Optional[int] = None
     sent: Optional[bool] = False
     paid: bool
     license_type: int
@@ -316,9 +316,10 @@ class LicenseBase(BaseModel):
     revoked: Optional[bool] = None
 
 class LicenseCreate(LicenseBase):
-    pass
+    address_id: Optional[int] = None
 
 class LicenseResponse(LicenseBase):
+    inspection_id: int
     id: int
     created_at: datetime
     updated_at: datetime
