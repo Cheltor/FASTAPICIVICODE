@@ -268,6 +268,7 @@ class InspectionResponse(BaseModel):
     inspector: Optional[UserResponse] = None
     status: Optional[str] = None
     source: Optional[str] = None
+    description: Optional[str] = None
     scheduled_datetime: Optional[datetime] = None
     unit_id: Optional[int] = None
     business_id: Optional[int] = None

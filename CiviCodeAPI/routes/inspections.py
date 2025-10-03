@@ -108,6 +108,21 @@ def get_inspection(inspection_id: int, db: Session = Depends(get_db)):
 
     if not inspection:
         raise HTTPException(status_code=404, detail="Inspection not found")
+    # Provide a compatibility fallback so clients can read a description-like field
+    try:
+        existing_comment = getattr(inspection, 'comment', None)
+        desc = getattr(inspection, 'description', None)
+        if not existing_comment:
+            fallback = None
+            for key in ('description', 'result', 'notes_area_1', 'notes_area_2', 'notes_area_3', 'thoughts'):
+                val = getattr(inspection, key, None)
+                if isinstance(val, str) and val.strip():
+                    fallback = val.strip()
+                    break
+            setattr(inspection, 'comment', fallback)
+    except Exception:
+        # non-fatal; continue returning the inspection
+        pass
     return inspection
 
 # Update status for an inspection (e.g., complaint)
