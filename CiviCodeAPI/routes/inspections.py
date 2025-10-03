@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends, status, UploadFile, File, Form
 from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional
-from models import Inspection, Contact, Address, Area, Room, Prompt, Observation, Photo, ActiveStorageAttachment, ActiveStorageBlob, License, Permit, Violation
+from models import Inspection, Contact, Address, Area, Room, Prompt, Observation, Photo, ActiveStorageAttachment, ActiveStorageBlob, License, Permit, Violation, User
 from schemas import InspectionResponse, ContactResponse, AddressResponse, AreaResponse, AreaCreate, RoomResponse, RoomCreate, PromptCreate, PromptResponse, ObservationCreate, ObservationResponse, ObservationUpdate
 from schemas import InspectionResponse, ContactResponse, AddressResponse, AreaResponse, AreaCreate, RoomResponse, RoomCreate, PromptCreate, PromptResponse, ObservationCreate, ObservationResponse, PotentialObservationResponse
 from database import get_db
@@ -256,6 +256,38 @@ def update_inspection_contact(inspection_id: int, contact_id: int = Form(...), d
     )
     return updated
 
+# Update inspector assignment for an inspection or complaint
+@router.patch("/inspections/{inspection_id}/assignee", response_model=InspectionResponse)
+def update_inspection_assignee(
+    inspection_id: int,
+    inspector_id: Optional[int] = Form(None),
+    db: Session = Depends(get_db),
+):
+    inspection = db.query(Inspection).filter(Inspection.id == inspection_id).first()
+    if not inspection:
+        raise HTTPException(status_code=404, detail="Inspection not found")
+
+    if inspector_id in (None, ""):
+        inspection.inspector_id = None
+    else:
+        inspector = db.query(User).filter(User.id == inspector_id).first()
+        if not inspector:
+            raise HTTPException(status_code=404, detail="User not found")
+        inspection.inspector_id = inspector_id
+
+    db.commit()
+
+    updated = (
+        db.query(Inspection)
+        .options(
+            joinedload(Inspection.address),
+            joinedload(Inspection.contact),
+            joinedload(Inspection.inspector),
+        )
+        .filter(Inspection.id == inspection_id)
+        .first()
+    )
+    return updated
 # Update schedule for an inspection
 @router.patch("/inspections/{inspection_id}/schedule", response_model=InspectionResponse)
 def update_inspection_schedule(
@@ -761,3 +793,5 @@ def get_inspection_photos(inspection_id: int, download: bool = False, db: Sessio
             continue
 
     return results
+
+

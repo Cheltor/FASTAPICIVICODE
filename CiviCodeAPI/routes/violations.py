@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException, Depends, Body, UploadFile, File, F
 from sqlalchemy.orm import Session, joinedload
 from typing import List
 from azure.storage.blob import generate_blob_sas, BlobSasPermissions
-from models import Violation, Citation, ActiveStorageAttachment, ActiveStorageBlob
+from models import Violation, Citation, ActiveStorageAttachment, ActiveStorageBlob, User
 import schemas
 from database import get_db
 from sqlalchemy import desc
@@ -71,6 +71,25 @@ def create_violation(violation: schemas.ViolationCreate, db: Session = Depends(g
     db.refresh(new_violation)
     return new_violation
 
+# Reassign a violation to a different user
+@router.patch("/violation/{violation_id}/assignee", response_model=schemas.ViolationResponse)
+def update_violation_assignee(
+    violation_id: int,
+    user_id: int = Form(...),
+    db: Session = Depends(get_db),
+):
+    violation = db.query(models.Violation).filter(models.Violation.id == violation_id).first()
+    if not violation:
+        raise HTTPException(status_code=404, detail="Violation not found")
+
+    assignee = db.query(User).filter(User.id == user_id).first()
+    if not assignee:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    violation.user_id = user_id
+    db.commit()
+
+    return get_violation(violation_id, db)
 # Get a specific violation by ID
 @router.get("/violation/{violation_id}", response_model=schemas.ViolationResponse)
 def get_violation(violation_id: int, db: Session = Depends(get_db)):
@@ -440,4 +459,6 @@ async def upload_violation_photos(
             continue
 
     return {"uploaded": uploaded}
+
+
 
