@@ -2,7 +2,7 @@ import logging
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
-from routes import addresses_router, users_router, businesses_router, contacts_router, violations_router, comments_router, citations_router, inspections_router, codes_router, licenses_router, dashboard_router, permits_router, sir_router, word_templates  # Updated import
+from routes import addresses_router, users_router, businesses_router, contacts_router, violations_router, comments_router, citations_router, inspections_router, codes_router, licenses_router, dashboard_router, permits_router, sir_router, notifications_router, word_templates  # Updated import
 from database import engine, Base
 from storage import container_client
 import uvicorn
@@ -65,6 +65,9 @@ app.include_router(word_templates.router)  # Registered the router
 
 # Include SIR stats routes
 app.include_router(sir_router)
+
+# Include notifications routes
+app.include_router(notifications_router)
 
 # CORS middleware
 app.add_middleware(

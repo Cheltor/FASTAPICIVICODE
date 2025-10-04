@@ -553,3 +553,22 @@ class ViolationCommentResponse(ViolationCommentBase):
     user: Optional[UserResponse] = None
     class Config:
         from_attributes = True
+
+# Notifications
+class NotificationBase(BaseModel):
+    title: Optional[str] = None
+    body: Optional[str] = None
+    inspection_id: int
+    user_id: int
+    read: Optional[bool] = False
+
+class NotificationCreate(NotificationBase):
+    pass
+
+class NotificationResponse(NotificationBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True

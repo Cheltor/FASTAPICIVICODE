@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends, status, UploadFile, File, Form
 from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional
-from models import Inspection, Contact, Address, Area, Room, Prompt, Observation, Photo, ActiveStorageAttachment, ActiveStorageBlob, License, Permit, Violation, User
+from models import Inspection, Contact, Address, Area, Room, Prompt, Observation, Photo, ActiveStorageAttachment, ActiveStorageBlob, License, Permit, Violation, User, Notification
 from schemas import InspectionResponse, ContactResponse, AddressResponse, AreaResponse, AreaCreate, RoomResponse, RoomCreate, PromptCreate, PromptResponse, ObservationCreate, ObservationResponse, ObservationUpdate
 from schemas import InspectionResponse, ContactResponse, AddressResponse, AreaResponse, AreaCreate, RoomResponse, RoomCreate, PromptCreate, PromptResponse, ObservationCreate, ObservationResponse, PotentialObservationResponse
 from database import get_db
@@ -14,6 +14,27 @@ import uuid
 from media_service import ensure_blob_browser_safe
 
 router = APIRouter()
+
+# Internal helper to create a notification when assigning/reassigning
+def _create_assignment_notification(db: Session, inspection: Inspection, inspector_id: Optional[int]):
+    if not inspector_id:
+        return
+    try:
+        title = "Inspection assigned"
+        body = f"You have been assigned to inspection #{inspection.id}."
+        notif = Notification(
+            title=title,
+            body=body,
+            inspection_id=inspection.id,
+            user_id=int(inspector_id),
+            read=False,
+        )
+        db.add(notif)
+        db.commit()
+    except Exception:
+        db.rollback()
+        # Silent failure; we don't want assignment to fail due to notification
+        pass
 
 # Get all inspections
 @router.get("/inspections/", response_model=List[InspectionResponse])
@@ -90,6 +111,9 @@ async def create_inspection(
             raise HTTPException(status_code=500, detail=f"Failed to upload file {attachment.filename}: {str(e)}")
 
     db.commit()
+
+    # Notification: if inspector assigned at creation, notify them
+    _create_assignment_notification(db, new_inspection, inspector_id)
 
     return new_inspection
 
@@ -282,6 +306,7 @@ def update_inspection_assignee(
     if not inspection:
         raise HTTPException(status_code=404, detail="Inspection not found")
 
+    previous_inspector_id = inspection.inspector_id
     if inspector_id in (None, ""):
         inspection.inspector_id = None
     else:
@@ -291,6 +316,10 @@ def update_inspection_assignee(
         inspection.inspector_id = inspector_id
 
     db.commit()
+
+    # If assignment changed and new inspector exists, create notification
+    if inspector_id and inspector_id != previous_inspector_id:
+        _create_assignment_notification(db, inspection, inspector_id)
 
     updated = (
         db.query(Inspection)
