@@ -6,6 +6,10 @@ from models import Notification, Inspection, User
 from schemas import NotificationCreate, NotificationResponse
 from fastapi.security import OAuth2PasswordBearer
 import jwt
+from email_service import send_notification_email
+from email_service import EMAIL_ENABLED, SENDGRID_API_KEY, SENDGRID_FROM_EMAIL
+from pydantic import BaseModel
+import os
 
 # Use the same auth settings as users
 SECRET_KEY = "trpdds2020"
@@ -21,7 +25,7 @@ def _get_current_user_id(token: str = Depends(oauth2_scheme)) -> int:
 
 router = APIRouter()
 
-@router.get("/notifications/", response_model=List[NotificationResponse])
+@router.get("/notifications", response_model=List[NotificationResponse])
 def list_notifications(db: Session = Depends(get_db), current_user_id: int = Depends(_get_current_user_id)):
     notifications = (
         db.query(Notification)
@@ -31,7 +35,7 @@ def list_notifications(db: Session = Depends(get_db), current_user_id: int = Dep
     )
     return notifications
 
-@router.post("/notifications/", response_model=NotificationResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/notifications", response_model=NotificationResponse, status_code=status.HTTP_201_CREATED)
 def create_notification(payload: NotificationCreate, db: Session = Depends(get_db), current_user_id: int = Depends(_get_current_user_id)):
     # basic validation
     inspection = db.query(Inspection).filter(Inspection.id == payload.inspection_id).first()
@@ -54,6 +58,18 @@ def create_notification(payload: NotificationCreate, db: Session = Depends(get_d
     db.add(notif)
     db.commit()
     db.refresh(notif)
+    # Email: send to recipient; allow override via TEST_EMAIL_USER_ID
+    try:
+        import os
+        override_id = os.getenv("TEST_EMAIL_USER_ID")
+        target_user_id = int(override_id) if override_id else int(payload.user_id)
+        target_user = db.query(User).filter(User.id == target_user_id).first()
+        if target_user and target_user.email:
+            subj = payload.title or "Notification"
+            send_notification_email(subject=subj, body=payload.body or "", to_email=target_user.email, inspection_id=payload.inspection_id)
+    except Exception:
+        # ignore email errors
+        pass
     return notif
 
 @router.get("/notifications/{notification_id}", response_model=NotificationResponse)
@@ -91,3 +107,47 @@ def mark_all_notifications_read(db: Session = Depends(get_db), current_user_id: 
     )
     db.commit()
     return updated
+
+# Test email endpoint for admins or any authenticated user; routes to override if set
+class TestEmailRequest(BaseModel):
+    subject: Optional[str] = "Test notification email"
+    body: Optional[str] = "This is a test notification email."
+    inspection_id: Optional[int] = None
+
+@router.post("/notifications/test-email")
+def send_test_email(payload: TestEmailRequest, db: Session = Depends(get_db), current_user_id: int = Depends(_get_current_user_id)):
+    # Determine target user: TEST_EMAIL_USER_ID override or current user
+    override_id = os.getenv("TEST_EMAIL_USER_ID")
+    target_id = int(override_id) if override_id else int(current_user_id)
+    target_user = db.query(User).filter(User.id == target_id).first()
+    if not target_user or not target_user.email:
+        raise HTTPException(status_code=400, detail="No valid recipient email available for test.")
+
+    # Find the most recent notification across all users and resend it
+    notif = (
+        db.query(Notification)
+        .order_by(Notification.created_at.desc())
+        .first()
+    )
+    if not notif:
+        raise HTTPException(status_code=404, detail="No notifications found to send for this user.")
+
+    subject = notif.title or "Notification"
+    body = notif.body or ""
+    sent = send_notification_email(
+        subject=subject,
+        body=body,
+        to_email=target_user.email,
+        inspection_id=getattr(notif, "inspection_id", None),
+    )
+    return {
+        "ok": True,
+        "email_sent": bool(sent),
+        "notification_id": notif.id,
+        "to_user_id": target_user.id,
+        "email_config": {
+            "enabled": bool(EMAIL_ENABLED),
+            "has_api_key": bool(SENDGRID_API_KEY),
+            "from_email": SENDGRID_FROM_EMAIL,
+        },
+    }

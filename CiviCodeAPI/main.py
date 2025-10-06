@@ -6,6 +6,10 @@ from routes import addresses_router, users_router, businesses_router, contacts_r
 from database import engine, Base
 from storage import container_client
 import uvicorn
+from dotenv import load_dotenv
+
+# Load environment variables from a local .env file if present (useful for local dev)
+load_dotenv()
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)

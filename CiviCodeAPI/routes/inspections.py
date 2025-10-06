@@ -12,6 +12,7 @@ from datetime import datetime, timedelta, date
 from azure.storage.blob import generate_blob_sas, BlobSasPermissions
 import uuid
 from media_service import ensure_blob_browser_safe
+from email_service import send_notification_email
 
 router = APIRouter()
 
@@ -31,6 +32,16 @@ def _create_assignment_notification(db: Session, inspection: Inspection, inspect
         )
         db.add(notif)
         db.commit()
+        # Email: prefer actual recipient; allow override via env TEST_EMAIL_USER_ID
+        try:
+            import os
+            override_id = os.getenv("TEST_EMAIL_USER_ID")
+            target_user_id = int(override_id) if override_id else int(inspector_id)
+            target_user = db.query(User).filter(User.id == target_user_id).first()
+            if target_user and target_user.email:
+                send_notification_email(subject=title, body=body, to_email=target_user.email, inspection_id=inspection.id)
+        except Exception:
+            pass
     except Exception:
         db.rollback()
         # Silent failure; we don't want assignment to fail due to notification
