@@ -50,13 +50,27 @@ def _create_assignment_notification(db: Session, inspection: Inspection, inspect
 # Get all inspections
 @router.get("/inspections/", response_model=List[InspectionResponse])
 def get_inspections(skip: int = 0, db: Session = Depends(get_db)):
-    inspections = db.query(Inspection).filter(Inspection.source != 'Complaint').order_by(Inspection.created_at.desc()).offset(skip).all()
+    inspections = (
+        db.query(Inspection)
+        .options(joinedload(Inspection.address))
+        .filter(Inspection.source != 'Complaint')
+        .order_by(Inspection.created_at.desc())
+        .offset(skip)
+        .all()
+    )
     return inspections
 
 # Get all complaints
 @router.get("/complaints/", response_model=List[InspectionResponse])
 def get_complaints(skip: int = 0, db: Session = Depends(get_db)):
-    complaints = db.query(Inspection).filter(Inspection.source == 'Complaint').order_by(Inspection.created_at.desc()).offset(skip).all()
+    complaints = (
+        db.query(Inspection)
+        .options(joinedload(Inspection.address))
+        .filter(Inspection.source == 'Complaint')
+        .order_by(Inspection.created_at.desc())
+        .offset(skip)
+        .all()
+    )
     return complaints
 
 # Delete an inspection by ID
@@ -66,6 +80,43 @@ def delete_inspection(inspection_id: int, db: Session = Depends(get_db)):
     if not insp:
         raise HTTPException(status_code=404, detail="Inspection not found")
     try:
+        # Clean up dependent records to avoid FK constraint failures
+        from models import License as LicenseModel, Permit as PermitModel, Notification as NotificationModel
+        from models import InspectionComment as InspectionCommentModel, InspectionCode as InspectionCodeModel, Area as AreaModel, Observation as ObservationModel, Photo as PhotoModel
+        from models import Violation as ViolationModel, Citation as CitationModel, ViolationComment as ViolationCommentModel, ViolationCode as ViolationCodeModel
+
+        # Delete licenses and permits linked to this inspection
+        db.query(LicenseModel).filter(LicenseModel.inspection_id == inspection_id).delete(synchronize_session=False)
+        db.query(PermitModel).filter(PermitModel.inspection_id == inspection_id).delete(synchronize_session=False)
+
+        # Delete notifications linked to this inspection
+        db.query(NotificationModel).filter(NotificationModel.inspection_id == inspection_id).delete(synchronize_session=False)
+
+        # Delete inspection comments and codes
+        db.query(InspectionCommentModel).filter(InspectionCommentModel.inspection_id == inspection_id).delete(synchronize_session=False)
+        db.query(InspectionCodeModel).filter(InspectionCodeModel.inspection_id == inspection_id).delete(synchronize_session=False)
+
+        # Areas: compute observation ids first, delete photos -> observations -> areas
+        area_ids = [row.id for row in db.query(AreaModel.id).filter(AreaModel.inspection_id == inspection_id).all()]
+        if area_ids:
+            obs_ids = [row.id for row in db.query(ObservationModel.id).filter(ObservationModel.area_id.in_(area_ids)).all()]
+            if obs_ids:
+                db.query(PhotoModel).filter(PhotoModel.observation_id.in_(obs_ids)).delete(synchronize_session=False)
+                db.query(ObservationModel).filter(ObservationModel.id.in_(obs_ids)).delete(synchronize_session=False)
+            db.query(AreaModel).filter(AreaModel.id.in_(area_ids)).delete(synchronize_session=False)
+
+        # Violations linked to this inspection and their dependents
+        vio_ids = [row.id for row in db.query(ViolationModel.id).filter(ViolationModel.inspection_id == inspection_id).all()]
+        if vio_ids:
+            # Delete citations
+            db.query(CitationModel).filter(CitationModel.violation_id.in_(vio_ids)).delete(synchronize_session=False)
+            # Delete violation comments
+            db.query(ViolationCommentModel).filter(ViolationCommentModel.violation_id.in_(vio_ids)).delete(synchronize_session=False)
+            # Delete violation<->code join rows
+            db.query(ViolationCodeModel).filter(ViolationCodeModel.violation_id.in_(vio_ids)).delete(synchronize_session=False)
+            # Finally delete violations
+            db.query(ViolationModel).filter(ViolationModel.id.in_(vio_ids)).delete(synchronize_session=False)
+
         db.delete(insp)
         db.commit()
     except Exception:
@@ -79,6 +130,31 @@ def delete_complaint(inspection_id: int, db: Session = Depends(get_db)):
     if not insp:
         raise HTTPException(status_code=404, detail="Complaint not found")
     try:
+        # Clean up dependent records (same as inspections)
+        from models import License as LicenseModel, Permit as PermitModel, Notification as NotificationModel
+        from models import InspectionComment as InspectionCommentModel, InspectionCode as InspectionCodeModel, Area as AreaModel, Observation as ObservationModel, Photo as PhotoModel
+        from models import Violation as ViolationModel, Citation as CitationModel, ViolationComment as ViolationCommentModel, ViolationCode as ViolationCodeModel
+
+        db.query(LicenseModel).filter(LicenseModel.inspection_id == inspection_id).delete(synchronize_session=False)
+        db.query(PermitModel).filter(PermitModel.inspection_id == inspection_id).delete(synchronize_session=False)
+        db.query(NotificationModel).filter(NotificationModel.inspection_id == inspection_id).delete(synchronize_session=False)
+        db.query(InspectionCommentModel).filter(InspectionCommentModel.inspection_id == inspection_id).delete(synchronize_session=False)
+        db.query(InspectionCodeModel).filter(InspectionCodeModel.inspection_id == inspection_id).delete(synchronize_session=False)
+        area_ids = [row.id for row in db.query(AreaModel.id).filter(AreaModel.inspection_id == inspection_id).all()]
+        if area_ids:
+            obs_ids = [row.id for row in db.query(ObservationModel.id).filter(ObservationModel.area_id.in_(area_ids)).all()]
+            if obs_ids:
+                db.query(PhotoModel).filter(PhotoModel.observation_id.in_(obs_ids)).delete(synchronize_session=False)
+                db.query(ObservationModel).filter(ObservationModel.id.in_(obs_ids)).delete(synchronize_session=False)
+            db.query(AreaModel).filter(AreaModel.id.in_(area_ids)).delete(synchronize_session=False)
+
+        vio_ids = [row.id for row in db.query(ViolationModel.id).filter(ViolationModel.inspection_id == inspection_id).all()]
+        if vio_ids:
+            db.query(CitationModel).filter(CitationModel.violation_id.in_(vio_ids)).delete(synchronize_session=False)
+            db.query(ViolationCommentModel).filter(ViolationCommentModel.violation_id.in_(vio_ids)).delete(synchronize_session=False)
+            db.query(ViolationCodeModel).filter(ViolationCodeModel.violation_id.in_(vio_ids)).delete(synchronize_session=False)
+            db.query(ViolationModel).filter(ViolationModel.id.in_(vio_ids)).delete(synchronize_session=False)
+
         db.delete(insp)
         db.commit()
     except Exception:

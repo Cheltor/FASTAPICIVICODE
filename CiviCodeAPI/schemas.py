@@ -208,6 +208,7 @@ class CommentResponse(CommentBase):
     address_id: int
     user: UserResponse  # Include the user response here for returning full user data
     unit_id: Optional[int] = None
+    combadd: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

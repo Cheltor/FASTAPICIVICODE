@@ -45,11 +45,33 @@ def _require_admin(token: str = Depends(oauth2_scheme), db: Session = Depends(ge
         raise HTTPException(status_code=403, detail="Admin access required")
     return user
 
-# Get all comments
+# Get all comments (augmented with address combadd and user)
 @router.get("/comments/", response_model=List[CommentResponse])
 def get_comments(skip: int = 0, db: Session = Depends(get_db)):
     comments = db.query(Comment).order_by(Comment.created_at.desc()).offset(skip).all()
-    return comments
+    results: List[CommentResponse] = []
+    for c in comments:
+        user = db.query(User).filter(User.id == c.user_id).first()
+        combadd = None
+        # Lazy load combadd via address_id to avoid heavy join
+        try:
+            from models import Address
+            addr = db.query(Address).filter(Address.id == c.address_id).first()
+            combadd = addr.combadd if addr else None
+        except Exception:
+            combadd = None
+        results.append(CommentResponse(
+            id=c.id,
+            content=c.content,
+            user_id=c.user_id,
+            address_id=c.address_id,
+            user=UserResponse.from_orm(user) if user else None,
+            unit_id=c.unit_id,
+            combadd=combadd,
+            created_at=c.created_at,
+            updated_at=c.updated_at,
+        ))
+    return results
 
 # Get all contact comments (admin list)
 @router.get("/comments/contact/", response_model=List[ContactCommentResponse])

@@ -166,6 +166,19 @@ def get_citations_by_violation(violation_id: int, db: Session = Depends(get_db))
         response.append(citation_dict)
     return response
 
+# Delete a violation by ID
+@router.delete("/violations/{violation_id}", status_code=204)
+def delete_violation(violation_id: int, db: Session = Depends(get_db)):
+    vio = db.query(models.Violation).filter(models.Violation.id == violation_id).first()
+    if not vio:
+        raise HTTPException(status_code=404, detail="Violation not found")
+    try:
+        db.delete(vio)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Unable to delete violation due to related records")
+
 # Add a comment to a violation
 @router.post("/violation/{violation_id}/comments", response_model=schemas.ViolationCommentResponse)
 def add_violation_comment(violation_id: int, comment: schemas.ViolationCommentCreate, db: Session = Depends(get_db)):
