@@ -1,5 +1,6 @@
 
 from fastapi import APIRouter, HTTPException, Depends, Query, Body
+from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from sqlalchemy import or_, func
@@ -7,11 +8,30 @@ from sqlalchemy.exc import IntegrityError
 from storage import blob_service_client, CONTAINER_NAME
 from media_service import ensure_blob_browser_safe
 from database import get_db  # Ensure get_db is imported before use
-from models import Address, Comment, Violation, Inspection, Unit, ActiveStorageAttachment, ActiveStorageBlob, Contact, AddressContact
+from models import Address, Comment, Violation, Inspection, Unit, ActiveStorageAttachment, ActiveStorageBlob, Contact, AddressContact, User
 import models
 from schemas import AddressCreate, AddressResponse, CommentResponse, ViolationResponse, InspectionResponse, ViolationCreate, CommentCreate, InspectionCreate, UnitResponse, UnitCreate, ContactResponse, ContactCreate
 
 router = APIRouter()
+
+# Admin-only guard for edits/deletes
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
+SECRET_KEY = "trpdds2020"
+ALGORITHM = "HS256"
+
+def _require_admin(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    try:
+        import jwt
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = int(payload.get("sub"))
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid auth token")
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if int(getattr(user, 'role', 0)) < 3:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user
 
 # Get all contacts for an address
 @router.get("/addresses/{address_id}/contacts", response_model=List[ContactResponse])
@@ -68,8 +88,13 @@ def remove_address_contact(address_id: int, contact_id: int, db: Session = Depen
 # Get all addresses
 @router.get("/addresses/", response_model=List[AddressResponse])
 def get_addresses(skip: int = 0, db: Session = Depends(get_db)):
-  addresses = db.query(Address).order_by(Address.id).offset(skip).all()
-  return addresses
+    addresses = (
+        db.query(Address)
+        .order_by(Address.created_at.desc())
+        .offset(skip)
+        .all()
+    )
+    return addresses
 
 # Search for addresses by partial match of combadd, with a limit on results
 @router.get("/addresses/search", response_model=List[AddressResponse])
@@ -176,7 +201,7 @@ def create_comment_for_address(address_id: int, comment: CommentCreate, db: Sess
 
 # Update a comment for the address
 @router.put("/addresses/{address_id}/comments/{comment_id}", response_model=CommentResponse)
-def update_address_comment(address_id: int, comment_id: int, comment: CommentResponse, db: Session = Depends(get_db)):
+def update_address_comment(address_id: int, comment_id: int, comment: CommentResponse, db: Session = Depends(get_db), admin_user: User = Depends(_require_admin)):
     # Check if the address exists
     address = db.query(Address).filter(Address.id == address_id).first()
     if not address:
@@ -197,7 +222,7 @@ def update_address_comment(address_id: int, comment_id: int, comment: CommentRes
 
 # Delete a comment for the address
 @router.delete("/addresses/{address_id}/comments/{comment_id}", response_model=CommentResponse)
-def delete_address_comment(address_id: int, comment_id: int, db: Session = Depends(get_db)):
+def delete_address_comment(address_id: int, comment_id: int, db: Session = Depends(get_db), admin_user: User = Depends(_require_admin)):
     # Check if the address exists
     address = db.query(Address).filter(Address.id == address_id).first()
     if not address:

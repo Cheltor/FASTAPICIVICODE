@@ -29,7 +29,7 @@ def get_contacts(
                 Contact.phone.ilike(like)
             )
         )
-    contacts = query.offset(skip).all()
+    contacts = query.order_by(Contact.created_at.desc()).offset(skip).all()
     return contacts
 
 # Create a new contact
@@ -162,5 +162,18 @@ def update_contact(contact_id: int, contact: ContactCreate = Body(...), db: Sess
     db.commit()
     db.refresh(db_contact)
     return db_contact
+
+# Delete a contact by ID
+@router.delete("/contacts/{contact_id}", status_code=204)
+def delete_contact(contact_id: int, db: Session = Depends(get_db)):
+    contact = db.query(Contact).filter(Contact.id == contact_id).first()
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    try:
+        db.delete(contact)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Unable to delete contact due to related records")
 
 

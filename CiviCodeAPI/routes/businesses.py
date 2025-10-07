@@ -78,7 +78,13 @@ def search_businesses(
 # Get all businesses
 @router.get("/businesses/", response_model=List[BusinessResponse])
 def get_businesses(skip: int = 0, db: Session = Depends(get_db)):
-    businesses = db.query(Business).options(joinedload(Business.address)).offset(skip).all()
+    businesses = (
+        db.query(Business)
+        .options(joinedload(Business.address))
+        .order_by(Business.created_at.desc())
+        .offset(skip)
+        .all()
+    )
 
     business_responses = []
     for business in businesses:
@@ -188,3 +194,16 @@ def update_business(business_id: int, data: dict = Body(...), db: Session = Depe
     db.commit()
     db.refresh(business)
     return business
+
+# Delete a business by ID
+@router.delete("/businesses/{business_id}", status_code=204)
+def delete_business(business_id: int, db: Session = Depends(get_db)):
+    business = db.query(Business).filter(Business.id == business_id).first()
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+    try:
+        db.delete(business)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Unable to delete business due to related records")

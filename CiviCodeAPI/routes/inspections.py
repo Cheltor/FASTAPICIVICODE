@@ -59,6 +59,32 @@ def get_complaints(skip: int = 0, db: Session = Depends(get_db)):
     complaints = db.query(Inspection).filter(Inspection.source == 'Complaint').order_by(Inspection.created_at.desc()).offset(skip).all()
     return complaints
 
+# Delete an inspection by ID
+@router.delete("/inspections/{inspection_id}", status_code=204)
+def delete_inspection(inspection_id: int, db: Session = Depends(get_db)):
+    insp = db.query(Inspection).filter(Inspection.id == inspection_id).first()
+    if not insp:
+        raise HTTPException(status_code=404, detail="Inspection not found")
+    try:
+        db.delete(insp)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Unable to delete inspection due to related records")
+
+# Delete a complaint by ID (complaint is an Inspection with source 'Complaint')
+@router.delete("/complaints/{inspection_id}", status_code=204)
+def delete_complaint(inspection_id: int, db: Session = Depends(get_db)):
+    insp = db.query(Inspection).filter(Inspection.id == inspection_id, Inspection.source == 'Complaint').first()
+    if not insp:
+        raise HTTPException(status_code=404, detail="Complaint not found")
+    try:
+        db.delete(insp)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Unable to delete complaint due to related records")
+
 # Create a new inspection
 @router.post("/inspections/", response_model=InspectionResponse)
 async def create_inspection(

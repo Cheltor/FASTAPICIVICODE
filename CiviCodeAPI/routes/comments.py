@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, Body
+from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from azure.storage.blob import generate_blob_sas, BlobSasPermissions
 from datetime import datetime, timedelta
@@ -18,6 +19,7 @@ from image_utils import normalize_image_for_web
 import os
 import logging
 import uuid
+import jwt
 
 router = APIRouter()
 
@@ -25,11 +27,64 @@ router = APIRouter()
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
+# Auth: Admin-only guard
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
+SECRET_KEY = "trpdds2020"
+ALGORITHM = "HS256"
+
+def _require_admin(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = int(payload.get("sub"))
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid auth token")
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if int(getattr(user, 'role', 0)) < 3:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user
+
 # Get all comments
 @router.get("/comments/", response_model=List[CommentResponse])
 def get_comments(skip: int = 0, db: Session = Depends(get_db)):
-    comments = db.query(Comment).offset(skip).all()
+    comments = db.query(Comment).order_by(Comment.created_at.desc()).offset(skip).all()
     return comments
+
+# Get all contact comments (admin list)
+@router.get("/comments/contact/", response_model=List[ContactCommentResponse])
+def get_all_contact_comments(skip: int = 0, db: Session = Depends(get_db)):
+    comments = db.query(ContactComment).order_by(ContactComment.created_at.desc()).offset(skip).all()
+    return comments
+
+# Update a comment by ID
+@router.put("/comments/{comment_id}", response_model=CommentResponse)
+def update_comment(comment_id: int, comment_in: CommentCreate, db: Session = Depends(get_db), admin_user: User = Depends(_require_admin)):
+    db_comment = db.query(Comment).filter(Comment.id == comment_id).first()
+    if not db_comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+
+    # Update fields from schema; allow clearing fields with empty strings
+    data = comment_in.dict()
+    for key, value in data.items():
+        setattr(db_comment, key, value if value != '' else None)
+
+    db.commit()
+    db.refresh(db_comment)
+    return db_comment
+
+# Delete a comment by ID
+@router.delete("/comments/{comment_id}", status_code=204)
+def delete_comment(comment_id: int, db: Session = Depends(get_db), admin_user: User = Depends(_require_admin)):
+    db_comment = db.query(Comment).filter(Comment.id == comment_id).first()
+    if not db_comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    try:
+        db.delete(db_comment)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Unable to delete comment due to related records")
 
 # Create a new comment (JSON payload, no files)
 @router.post("/comments/", response_model=CommentResponse)
@@ -89,6 +144,50 @@ def get_comments_by_contact(contact_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=422, detail="Invalid contact_id")
     comments = db.query(ContactComment).filter(ContactComment.contact_id == contact_id).order_by(ContactComment.created_at.desc()).all()
     return comments
+
+# Get a single ContactComment by ID (for admin editor)
+@router.get("/comments/contact/by-id/{comment_id}", response_model=ContactCommentResponse)
+def get_contact_comment(comment_id: int, db: Session = Depends(get_db)):
+    cc = db.query(ContactComment).filter(ContactComment.id == comment_id).first()
+    if not cc:
+        raise HTTPException(status_code=404, detail="ContactComment not found")
+    return cc
+
+# Update a ContactComment (edit the comment text)
+@router.put("/comments/contact/{comment_id}", response_model=ContactCommentResponse)
+def update_contact_comment(comment_id: int, data: dict = Body(...), db: Session = Depends(get_db), admin_user: User = Depends(_require_admin)):
+    cc = db.query(ContactComment).filter(ContactComment.id == comment_id).first()
+    if not cc:
+        raise HTTPException(status_code=404, detail="ContactComment not found")
+    # Update only the editable fields; currently 'comment' is primary
+    payload = data if isinstance(data, dict) else {}
+    comment_text = payload.get('comment')
+    if comment_text is not None:
+        cc.comment = comment_text
+    # Optionally update the author (user_id) if provided
+    if 'user_id' in payload and payload['user_id'] is not None:
+        new_user = db.query(User).filter(User.id == int(payload['user_id'])).first()
+        if not new_user:
+            raise HTTPException(status_code=404, detail="Target user not found")
+        cc.user_id = int(payload['user_id'])
+    # Optionally allow updating user_id or contact_id if your schema demands; typically we don't change ownership
+    db.add(cc)
+    db.commit()
+    db.refresh(cc)
+    return cc
+
+# Delete a ContactComment (admin-only)
+@router.delete("/comments/contact/{comment_id}", status_code=204)
+def delete_contact_comment(comment_id: int, db: Session = Depends(get_db), admin_user: User = Depends(_require_admin)):
+    cc = db.query(ContactComment).filter(ContactComment.id == comment_id).first()
+    if not cc:
+        raise HTTPException(status_code=404, detail="ContactComment not found")
+    try:
+        db.delete(cc)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Unable to delete contact comment due to related records")
 
 # Fetch Comment photo by ID
 @router.get("/comments/{comment_id}/photos")
@@ -478,4 +577,30 @@ async def create_unit_comment(
         created_at=new_comment.created_at,
         updated_at=new_comment.updated_at,
     )
+
+# Update a unit comment (admin-only)
+@router.put("/comments/unit/{comment_id}", response_model=CommentResponse)
+def update_unit_comment(comment_id: int, comment_in: CommentCreate, db: Session = Depends(get_db), admin_user: User = Depends(_require_admin)):
+    db_comment = db.query(Comment).filter(Comment.id == comment_id).first()
+    if not db_comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    data = comment_in.dict()
+    for key, value in data.items():
+        setattr(db_comment, key, value if value != '' else None)
+    db.commit()
+    db.refresh(db_comment)
+    return db_comment
+
+# Delete a unit comment (admin-only)
+@router.delete("/comments/unit/{comment_id}", status_code=204)
+def delete_unit_comment(comment_id: int, db: Session = Depends(get_db), admin_user: User = Depends(_require_admin)):
+    db_comment = db.query(Comment).filter(Comment.id == comment_id).first()
+    if not db_comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    try:
+        db.delete(db_comment)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Unable to delete comment due to related records")
 

@@ -13,7 +13,7 @@ def get_permits(inspection_id: Optional[int] = None, db: Session = Depends(get_d
     q = db.query(Permit)
     if inspection_id is not None:
         q = q.filter(Permit.inspection_id == inspection_id)
-    permits = q.all()
+    permits = q.order_by(Permit.created_at.desc()).all()
 
     insp_ids = [p.inspection_id for p in permits]
     if not insp_ids:
@@ -63,3 +63,16 @@ def get_permit(permit_id: int, db: Session = Depends(get_db)):
     data['combadd'] = combadd
     data['address_id'] = address_id
     return data
+
+# Delete a permit by ID
+@router.delete("/permits/{permit_id}", status_code=204)
+def delete_permit(permit_id: int, db: Session = Depends(get_db)):
+    permit = db.query(Permit).filter(Permit.id == permit_id).first()
+    if not permit:
+        raise HTTPException(status_code=404, detail="Permit not found")
+    try:
+        db.delete(permit)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Unable to delete permit due to related records")

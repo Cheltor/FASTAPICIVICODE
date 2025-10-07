@@ -11,7 +11,11 @@ router = APIRouter()
 # Get all codes
 @router.get("/codes/", response_model=List[CodeResponse])
 def get_codes(db: Session = Depends(get_db)):
-    codes = db.query(Code).all()
+    # Prefer created_at if available, else fallback to id
+    try:
+        codes = db.query(Code).order_by(Code.created_at.desc()).all()
+    except Exception:
+        codes = db.query(Code).order_by(Code.id.desc()).all()
     return codes
 
 # Create a new code
@@ -41,3 +45,16 @@ def get_code(code_id: int, db: Session = Depends(get_db)):
     if not code:
         raise HTTPException(status_code=404, detail="Code not found")
     return code
+
+# Delete a code by ID
+@router.delete("/codes/{code_id}", status_code=204)
+def delete_code(code_id: int, db: Session = Depends(get_db)):
+    code = db.query(Code).filter(Code.id == code_id).first()
+    if not code:
+        raise HTTPException(status_code=404, detail="Code not found")
+    try:
+        db.delete(code)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Unable to delete code due to related records")

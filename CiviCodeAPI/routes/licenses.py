@@ -15,7 +15,7 @@ def get_licenses(inspection_id: Optional[int] = None, db: Session = Depends(get_
     q = db.query(License)
     if inspection_id is not None:
         q = q.filter(License.inspection_id == inspection_id)
-    licenses = q.all()
+    licenses = q.order_by(License.created_at.desc()).all()
 
     # gather inspection -> address mapping
     insp_ids = [lic.inspection_id for lic in licenses]
@@ -199,3 +199,16 @@ def update_license(license_id: int, license_in: LicenseUpdate, db: Session = Dep
     data_out['combadd'] = combadd
     data_out['address_id'] = address_id
     return data_out
+
+# Delete a license by ID
+@router.delete("/licenses/{license_id}", status_code=204)
+def delete_license(license_id: int, db: Session = Depends(get_db)):
+    lic = db.query(License).filter(License.id == license_id).first()
+    if not lic:
+        raise HTTPException(status_code=404, detail="License not found")
+    try:
+        db.delete(lic)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Unable to delete license due to related records")
