@@ -110,7 +110,8 @@ def search_addresses(
             or_(
                 Address.combadd.ilike(f"%{query}%"),       # Search by address string
                 Address.property_name.ilike(f"%{query}%"),  # Search by property name
-                Address.aka.ilike(f"%{query}%")             # Search by AKA
+                Address.aka.ilike(f"%{query}%"),            # Search by AKA
+                Address.ownername.ilike(f"%{query}%")       # Search by owner name
             )
         )
         .limit(limit)

@@ -234,11 +234,11 @@ def get_comment_photos(comment_id: int, download: bool = False, db: Session = De
         if not blob:
             continue  # Skip if no blob found
 
-            # Ensure browser-safe; convert on-demand if needed
-            try:
-                blob = ensure_blob_browser_safe(db, blob)
-            except Exception as e:
-                logger.error(f"On-demand conversion failed for blob {blob.key}: {e}")
+        # Ensure browser-safe; convert on-demand if needed
+        try:
+            blob = ensure_blob_browser_safe(db, blob)
+        except Exception as e:
+            logger.error(f"On-demand conversion failed for blob {getattr(blob, 'key', '?')}: {e}")
 
             # Generate a SAS token for the blob
         try:

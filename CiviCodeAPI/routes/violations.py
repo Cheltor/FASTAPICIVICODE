@@ -355,6 +355,12 @@ def get_violation_photos(violation_id: int, download: bool = False, db: Session 
         blob = db.query(ActiveStorageBlob).filter(ActiveStorageBlob.id == attachment.blob_id).first()
         if not blob:
             continue
+        # Ensure browser-safe; convert on-demand if needed (e.g., HEIC to JPEG, MOV to MP4)
+        try:
+            blob = ensure_blob_browser_safe(db, blob)
+        except Exception as e:
+            logging.exception(f"On-demand conversion failed for blob {getattr(blob, 'key', '?')}: {e}")
+            # Continue with the original blob if conversion fails
         try:
             sas_token = generate_blob_sas(
                 account_name=account_name,
@@ -367,10 +373,28 @@ def get_violation_photos(violation_id: int, download: bool = False, db: Session 
                 content_disposition=(f'attachment; filename="{blob.filename}"' if download else None),
             )
             url = f"https://{account_name}.blob.core.windows.net/{CONTAINER_NAME}/{blob.key}?{sas_token}"
+            poster_url = None
+            if (blob.content_type or "").startswith("video/") and blob.key.lower().endswith('.mp4'):
+                base = blob.key[:-4]
+                poster_key = f"{base}-poster.jpg"
+                try:
+                    poster_sas = generate_blob_sas(
+                        account_name=account_name,
+                        container_name=CONTAINER_NAME,
+                        blob_name=poster_key,
+                        account_key=account_key,
+                        permission=BlobSasPermissions(read=True),
+                        start=datetime.utcnow() - timedelta(minutes=5),
+                        expiry=datetime.utcnow() + timedelta(hours=1),
+                    )
+                    poster_url = f"https://{account_name}.blob.core.windows.net/{CONTAINER_NAME}/{poster_key}?{poster_sas}"
+                except Exception:
+                    poster_url = None
             results.append({
                 "filename": blob.filename,
                 "content_type": blob.content_type,
                 "url": url,
+                "poster_url": poster_url,
             })
         except Exception as e:
             logging.exception(f"Failed generating SAS for blob {blob.key}: {e}")
@@ -434,18 +458,20 @@ async def upload_violation_photos(
     uploaded = []
     for file in files:
         try:
-            content_bytes = await file.read()
-            blob_key = f"violations/{violation_id}/{uuid.uuid4()}-{file.filename}"
+            # Read and normalize image/video for web (HEIC->JPEG, MOV->MP4 handled downstream if needed)
+            raw_bytes = await file.read()
+            normalized_bytes, norm_filename, norm_ct = normalize_image_for_web(raw_bytes, file.filename, file.content_type)
+            blob_key = f"violations/{violation_id}/{uuid.uuid4()}-{norm_filename}"
             blob_client = blob_service_client.get_blob_client(container=CONTAINER_NAME, blob=blob_key)
-            blob_client.upload_blob(content_bytes, overwrite=True, content_type=file.content_type)
+            blob_client.upload_blob(normalized_bytes, overwrite=True, content_type=norm_ct)
 
             blob_row = ActiveStorageBlob(
                 key=blob_key,
-                filename=file.filename,
-                content_type=file.content_type,
+                filename=norm_filename,
+                content_type=norm_ct,
                 meta_data=None,
                 service_name="azure",
-                byte_size=len(content_bytes),
+                byte_size=len(normalized_bytes),
                 checksum=None,
                 created_at=datetime.utcnow(),
             )
@@ -464,8 +490,8 @@ async def upload_violation_photos(
             db.commit()
 
             uploaded.append({
-                "filename": file.filename,
-                "content_type": file.content_type,
+                "filename": norm_filename,
+                "content_type": norm_ct,
             })
         except Exception as e:
             logging.exception(f"Failed to upload attachment for Violation {violation_id}: {e}")
