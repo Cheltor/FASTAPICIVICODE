@@ -12,6 +12,7 @@ from .dashboard import router as dashboard_router
 from .permits import router as permits_router
 from .sir import router as sir_router
 from .notifications import router as notifications_router
+from .assistant import router as assistant_router
 # Import other route modules as needed
 
 # You can list all the routers here
@@ -30,5 +31,6 @@ __all__ = [
     "permits_router",
     "sir_router",
     "notifications_router",
+    "assistant_router",
     # Add other routers here
 ]
