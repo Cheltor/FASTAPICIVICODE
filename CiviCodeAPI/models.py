@@ -34,6 +34,20 @@ class AppSettingAudit(Base):
 
     user = relationship('User')
 
+
+# Chat logs for assistant interactions
+class ChatLog(Base):
+    __tablename__ = 'chat_logs'
+
+    id = Column(BigInteger, primary_key=True, index=True)
+    user_id = Column(BigInteger, ForeignKey('users.id'), nullable=False)
+    thread_id = Column(String, nullable=True, index=True)
+    user_message = Column(Text, nullable=False)
+    assistant_reply = Column(Text)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+
+    user = relationship('User')
+
 # ActiveStorageAttachments
 class ActiveStorageAttachment(Base):
     __tablename__ = "active_storage_attachments"

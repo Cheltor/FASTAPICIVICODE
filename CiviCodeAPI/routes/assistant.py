@@ -9,6 +9,9 @@ from pydantic import AliasChoices, BaseModel, Field
 from genai_client import OpenAIConfigError, run_assistant
 from .auth import get_current_user
 from models import User
+from sqlalchemy.orm import Session
+from database import get_db
+from models import ChatLog
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +33,7 @@ class AssistantChatResponse(BaseModel):
 
 
 @router.post("/chat", response_model=AssistantChatResponse)
-async def create_assistant_chat(payload: AssistantChatRequest, current_user: User = Depends(get_current_user)) -> AssistantChatResponse:
+async def create_assistant_chat(payload: AssistantChatRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> AssistantChatResponse:
     """Proxy user messages to the configured OpenAI assistant."""
     try:
         reply, thread_id = await run_assistant(payload.message, payload.thread_id)
@@ -52,5 +55,19 @@ async def create_assistant_chat(payload: AssistantChatRequest, current_user: Use
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Error communicating with assistant.",
         ) from exc
+
+    # Persist chat log
+    try:
+        log = ChatLog(
+            user_id=current_user.id,
+            thread_id=thread_id,
+            user_message=payload.message,
+            assistant_reply=reply,
+        )
+        db.add(log)
+        db.commit()
+    except Exception:
+        # Don't fail the request if logging fails, but record a debug message
+        logger.exception('Failed to persist chat log')
 
     return AssistantChatResponse(reply=reply, thread_id=thread_id)

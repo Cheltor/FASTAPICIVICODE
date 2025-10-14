@@ -2,12 +2,15 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from database import get_db
-from models import AppSetting, User, AppSettingAudit
+from models import AppSetting, User, AppSettingAudit, ChatLog
 import jwt
 from fastapi.security import OAuth2PasswordBearer
 from fastapi.responses import StreamingResponse
 import json
 from settings_broadcast import broadcaster
+from typing import Optional
+from datetime import datetime
+from sqlalchemy.orm import joinedload
 
 router = APIRouter()
 
@@ -80,3 +83,59 @@ def set_chat_setting(payload: ChatSettingUpdate, db: Session = Depends(get_db), 
     except Exception:
         pass
     return {"enabled": payload.enabled}
+
+
+# Admin-only endpoint to fetch recent chat logs
+@router.get("/settings/chat/logs")
+def get_chat_logs(
+    limit: int = 100,
+    offset: int = 0,
+    user_id: Optional[int] = None,
+    thread_id: Optional[str] = None,
+    q: Optional[str] = None,
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(_get_current_user),
+):
+    # only admins may read logs
+    if current_user.role != 3:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+
+    query = db.query(ChatLog).options(joinedload(ChatLog.user))
+
+    if user_id is not None:
+        query = query.filter(ChatLog.user_id == user_id)
+    if thread_id:
+        query = query.filter(ChatLog.thread_id == thread_id)
+    if start_date:
+        query = query.filter(ChatLog.created_at >= start_date)
+    if end_date:
+        query = query.filter(ChatLog.created_at <= end_date)
+    if q:
+        pattern = f"%{q}%"
+        # search both user_message and assistant_reply
+        query = query.filter(
+            (ChatLog.user_message.ilike(pattern)) | (ChatLog.assistant_reply.ilike(pattern))
+        )
+
+    total = query.count()
+    logs = query.order_by(ChatLog.created_at.desc()).offset(offset).limit(limit).all()
+
+    return {
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "items": [
+            {
+                "id": l.id,
+                "user_id": l.user_id,
+                "user_email": l.user.email if l.user else None,
+                "thread_id": l.thread_id,
+                "user_message": l.user_message,
+                "assistant_reply": l.assistant_reply,
+                "created_at": l.created_at,
+            }
+            for l in logs
+        ],
+    }
