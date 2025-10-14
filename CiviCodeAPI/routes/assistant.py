@@ -3,10 +3,12 @@
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Depends
 from pydantic import AliasChoices, BaseModel, Field
 
 from genai_client import OpenAIConfigError, run_assistant
+from .auth import get_current_user
+from models import User
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +30,7 @@ class AssistantChatResponse(BaseModel):
 
 
 @router.post("/chat", response_model=AssistantChatResponse)
-async def create_assistant_chat(payload: AssistantChatRequest) -> AssistantChatResponse:
+async def create_assistant_chat(payload: AssistantChatRequest, current_user: User = Depends(get_current_user)) -> AssistantChatResponse:
     """Proxy user messages to the configured OpenAI assistant."""
     try:
         reply, thread_id = await run_assistant(payload.message, payload.thread_id)

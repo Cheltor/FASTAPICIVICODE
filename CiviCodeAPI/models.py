@@ -12,6 +12,28 @@ except ImportError:
 
 Base = declarative_base()
 
+# Small table for application-wide settings (key/value)
+class AppSetting(Base):
+    __tablename__ = "app_settings"
+
+    key = Column(String, primary_key=True, index=True)
+    value = Column(String, nullable=False)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+
+
+# Audit history for app settings
+class AppSettingAudit(Base):
+    __tablename__ = 'app_settings_audit'
+
+    id = Column(BigInteger, primary_key=True, index=True)
+    key = Column(String, nullable=False)
+    old_value = Column(String)
+    new_value = Column(String)
+    changed_by = Column(BigInteger, ForeignKey('users.id'))
+    changed_at = Column(DateTime, default=func.now(), nullable=False)
+
+    user = relationship('User')
+
 # ActiveStorageAttachments
 class ActiveStorageAttachment(Base):
     __tablename__ = "active_storage_attachments"

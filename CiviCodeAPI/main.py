@@ -1,27 +1,32 @@
+import os
 import logging
+from dotenv import load_dotenv
+
+# Load environment variables before importing app modules that read them
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+dev_env = os.path.join(ROOT, '.env.development')
+if os.path.exists(dev_env):
+    load_dotenv(dev_env)
+else:
+    # fallback to default .env
+    load_dotenv(os.path.join(ROOT, '.env'))
+
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
-from routes import addresses_router, users_router, businesses_router, contacts_router, violations_router, comments_router, citations_router, inspections_router, codes_router, licenses_router, dashboard_router, permits_router, sir_router, notifications_router, assistant_router, word_templates  # Updated import
+from routes import addresses_router, users_router, businesses_router, contacts_router, violations_router, comments_router, citations_router, inspections_router, codes_router, licenses_router, dashboard_router, permits_router, sir_router, notifications_router, assistant_router, settings_router, word_templates  # Updated import
 from database import engine, Base
-from storage import container_client
 import uvicorn
-from dotenv import load_dotenv
 
-# Load environment variables from a local .env file if present (useful for local dev)
-load_dotenv()
 
-logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger(__name__)
-
-# Initialize FastAPI app
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup logic
-    print("App startup event")
-    yield  # This will allow the app to run
+    logging.info("App startup event")
+    yield
     # Shutdown logic
-    print("App shutdown event")
+    logging.info("App shutdown event")
+
 
 app = FastAPI(lifespan=lifespan)
 
@@ -75,6 +80,9 @@ app.include_router(notifications_router)
 
 # Include assistant chat routes
 app.include_router(assistant_router)
+
+# Include settings routes
+app.include_router(settings_router)
 
 # CORS middleware
 app.add_middleware(
