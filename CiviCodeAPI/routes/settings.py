@@ -91,6 +91,7 @@ def get_chat_logs(
     limit: int = 100,
     offset: int = 0,
     user_id: Optional[int] = None,
+    user_email: Optional[str] = None,
     thread_id: Optional[str] = None,
     q: Optional[str] = None,
     start_date: Optional[datetime] = None,
@@ -104,8 +105,19 @@ def get_chat_logs(
 
     query = db.query(ChatLog).options(joinedload(ChatLog.user))
 
+    # Support filtering by numeric user_id OR by user_email (partial match)
     if user_id is not None:
         query = query.filter(ChatLog.user_id == user_id)
+    if user_email:
+        # find matching users (partial case-insensitive match)
+        from models import User as UserModel
+        matched = db.query(UserModel.id).filter(UserModel.email.ilike(f"%{user_email}%")).all()
+        matched_ids = [m[0] for m in matched]
+        if matched_ids:
+            query = query.filter(ChatLog.user_id.in_(matched_ids))
+        else:
+            # No users match => empty result
+            return {"total": 0, "limit": limit, "offset": offset, "items": []}
     if thread_id:
         query = query.filter(ChatLog.thread_id == thread_id)
     if start_date:
