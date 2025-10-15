@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends, status, Form
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from database import get_db
-from models import Notification, Inspection, User
+from models import Notification, Inspection, User, Comment, Address, Unit, ContactComment, Contact
 from schemas import NotificationCreate, NotificationResponse
 from fastapi.security import OAuth2PasswordBearer
 import jwt
@@ -25,6 +25,57 @@ def _get_current_user_id(token: str = Depends(oauth2_scheme)) -> int:
 
 router = APIRouter()
 
+def _decorate_origin(db: Session, notif: Notification) -> NotificationResponse:
+    origin_type = None
+    origin_label = None
+    origin_url_path = None
+
+    # Priority: inspection-linked
+    if getattr(notif, 'inspection_id', None):
+        origin_type = 'inspection'
+        ins = db.query(Inspection).filter(Inspection.id == notif.inspection_id).first()
+        addr = db.query(Address).filter(Address.id == ins.address_id).first() if ins else None
+        origin_label = f"Inspection at {getattr(addr, 'combadd', 'Address #' + str(getattr(ins, 'address_id', '')))}" if ins else None
+        origin_url_path = f"/inspection/{notif.inspection_id}"
+    # Comment-linked: could be address/unit comment or contact comment
+    elif getattr(notif, 'comment_id', None):
+        # Try address/unit comment first
+        c = db.query(Comment).filter(Comment.id == notif.comment_id).first()
+        if c:
+            addr = db.query(Address).filter(Address.id == c.address_id).first() if c.address_id else None
+            unit = db.query(Unit).filter(Unit.id == c.unit_id).first() if c.unit_id else None
+            origin_type = 'address_comment' if not c.unit_id else 'unit_comment'
+            if unit and addr:
+                origin_label = f"{addr.combadd or ('Address #' + str(addr.id))} • Unit {unit.number or unit.id}"
+                origin_url_path = f"/address/{addr.id}/unit/{unit.id}"
+            elif addr:
+                origin_label = addr.combadd or ("Address #" + str(addr.id))
+                origin_url_path = f"/address/{addr.id}"
+        else:
+            # Fallback: maybe this id corresponds to a ContactComment (we reuse comment_id for either kind)
+            cc = db.query(ContactComment).filter(ContactComment.id == notif.comment_id).first()
+            if cc:
+                contact = db.query(Contact).filter(Contact.id == cc.contact_id).first()
+                origin_type = 'contact_comment'
+                origin_label = getattr(contact, 'name', None) or f"Contact #{getattr(cc, 'contact_id', '')}"
+                origin_url_path = f"/contacts/{cc.contact_id}"
+
+    return NotificationResponse(
+        id=notif.id,
+        title=notif.title,
+        body=notif.body,
+        inspection_id=getattr(notif, 'inspection_id', None),
+        comment_id=getattr(notif, 'comment_id', None),
+        user_id=notif.user_id,
+        read=notif.read,
+        created_at=notif.created_at,
+        updated_at=notif.updated_at,
+        origin_type=origin_type,
+        origin_label=origin_label,
+        origin_url_path=origin_url_path,
+    )
+
+
 @router.get("/notifications", response_model=List[NotificationResponse])
 def list_notifications(db: Session = Depends(get_db), current_user_id: int = Depends(_get_current_user_id)):
     notifications = (
@@ -33,7 +84,8 @@ def list_notifications(db: Session = Depends(get_db), current_user_id: int = Dep
         .order_by(Notification.created_at.desc())
         .all()
     )
-    return notifications
+    # Decorate with origin info
+    return [_decorate_origin(db, n) for n in notifications]
 
 @router.post("/notifications", response_model=NotificationResponse, status_code=status.HTTP_201_CREATED)
 def create_notification(payload: NotificationCreate, db: Session = Depends(get_db), current_user_id: int = Depends(_get_current_user_id)):
@@ -72,14 +124,14 @@ def create_notification(payload: NotificationCreate, db: Session = Depends(get_d
     except Exception:
         # ignore email errors
         pass
-    return notif
+    return _decorate_origin(db, notif)
 
 @router.get("/notifications/{notification_id}", response_model=NotificationResponse)
 def get_notification(notification_id: int, db: Session = Depends(get_db), current_user_id: int = Depends(_get_current_user_id)):
     notif = db.query(Notification).filter(Notification.id == notification_id, Notification.user_id == current_user_id).first()
     if not notif:
         raise HTTPException(status_code=404, detail="Notification not found")
-    return notif
+    return _decorate_origin(db, notif)
 
 @router.patch("/notifications/{notification_id}/read", response_model=NotificationResponse)
 def mark_notification_read(notification_id: int, db: Session = Depends(get_db), current_user_id: int = Depends(_get_current_user_id)):
@@ -89,7 +141,7 @@ def mark_notification_read(notification_id: int, db: Session = Depends(get_db), 
     notif.read = True
     db.commit()
     db.refresh(notif)
-    return notif
+    return _decorate_origin(db, notif)
 
 @router.delete("/notifications/{notification_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_notification(notification_id: int, db: Session = Depends(get_db), current_user_id: int = Depends(_get_current_user_id)):

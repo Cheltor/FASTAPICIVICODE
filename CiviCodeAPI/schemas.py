@@ -571,6 +571,10 @@ class NotificationResponse(NotificationBase):
     id: int
     created_at: datetime
     updated_at: datetime
+    # Computed origin info for client deep-links
+    origin_type: Optional[str] = None  # e.g., 'inspection', 'address_comment', 'contact_comment'
+    origin_label: Optional[str] = None  # e.g., '123 MAIN ST (Unit 2)' or contact name
+    origin_url_path: Optional[str] = None  # e.g., '/address/123' or '/address/123/unit/45' or '/contacts/77' or '/inspection/5'
 
     class Config:
         from_attributes = True

@@ -15,8 +15,9 @@ from schemas import (
 )
 from database import get_db
 from models import Mention
-from storage import blob_service_client, container_client, account_name, account_key, CONTAINER_NAME
+import storage
 from image_utils import normalize_image_for_web
+from media_service import ensure_blob_browser_safe
 import os
 import logging
 import uuid
@@ -39,6 +40,10 @@ def get_comment_mentions(comment_id: int, db: Session = Depends(get_db)):
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
+
+# Ensure Azure storage lazy clients are initialized before using account info
+def _ensure_storage_init() -> None:
+    _ = storage.blob_service_client  # Touch to trigger lazy init and set account_name/account_key
 
 # Auth: Admin-only guard
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
@@ -298,10 +303,10 @@ def get_comment_photos(comment_id: int, download: bool = False, db: Session = De
             # Generate a SAS token for the blob
         try:
             sas_token = generate_blob_sas(
-                account_name=account_name,
-                container_name=CONTAINER_NAME,
+                account_name=storage.account_name,
+                container_name=storage.CONTAINER_NAME,
                 blob_name=blob.key,
-                account_key=account_key,
+                account_key=storage.account_key,
                 permission=BlobSasPermissions(read=True),
                 start=datetime.utcnow() - timedelta(minutes=5),  # Allow for clock skew
                 expiry=datetime.utcnow() + timedelta(hours=1),  # Token valid for 1 hour
@@ -312,22 +317,23 @@ def get_comment_photos(comment_id: int, download: bool = False, db: Session = De
             continue  # Skip this blob if there's an error
 
         # Construct the secure URL with SAS token
-        blob_url = f"https://{account_name}.blob.core.windows.net/{CONTAINER_NAME}/{blob.key}?{sas_token}"
+        blob_url = f"https://{storage.account_name}.blob.core.windows.net/{storage.CONTAINER_NAME}/{blob.key}?{sas_token}"
         poster_url = None
         if (blob.content_type or "").startswith("video/") and blob.key.lower().endswith('.mp4'):
             base = blob.key[:-4]
             poster_key = f"{base}-poster.jpg"
             try:
+                _ensure_storage_init()
                 poster_sas = generate_blob_sas(
-                    account_name=account_name,
-                    container_name=CONTAINER_NAME,
+                    account_name=storage.account_name,
+                    container_name=storage.CONTAINER_NAME,
                     blob_name=poster_key,
-                    account_key=account_key,
+                    account_key=storage.account_key,
                     permission=BlobSasPermissions(read=True),
                     start=datetime.utcnow() - timedelta(minutes=5),
                     expiry=datetime.utcnow() + timedelta(hours=1),
                 )
-                poster_url = f"https://{account_name}.blob.core.windows.net/{CONTAINER_NAME}/{poster_key}?{poster_sas}"
+                poster_url = f"https://{storage.account_name}.blob.core.windows.net/{storage.CONTAINER_NAME}/{poster_key}?{poster_sas}"
             except Exception:
                 poster_url = None
 
@@ -413,7 +419,7 @@ async def create_address_comment(
             raw_bytes = await file.read()
             normalized_bytes, norm_filename, norm_ct = normalize_image_for_web(raw_bytes, file.filename, file.content_type)
             blob_key = f"address-comments/{new_comment.id}/{uuid.uuid4()}-{norm_filename}"
-            blob_client = blob_service_client.get_blob_client(container=CONTAINER_NAME, blob=blob_key)
+            blob_client = storage.blob_service_client.get_blob_client(container=storage.CONTAINER_NAME, blob=blob_key)
             blob_client.upload_blob(normalized_bytes, overwrite=True, content_type=norm_ct)
 
             blob_row = ActiveStorageBlob(
@@ -547,7 +553,7 @@ async def create_contact_comment(
             raw = await file.read()
             normalized_bytes, norm_filename, norm_ct = normalize_image_for_web(raw, file.filename, file.content_type)
             blob_key = f"contact-comments/{new_comment.id}/{uuid.uuid4()}-{norm_filename}"
-            blob_client = blob_service_client.get_blob_client(container=CONTAINER_NAME, blob=blob_key)
+            blob_client = storage.blob_service_client.get_blob_client(container=storage.CONTAINER_NAME, blob=blob_key)
             blob_client.upload_blob(normalized_bytes, overwrite=True, content_type=norm_ct)
 
             # Create ActiveStorageBlob entry
@@ -600,17 +606,18 @@ def get_contact_comment_attachments(comment_id: int, download: bool = False, db:
         if not blob:
             continue
         try:
+            _ensure_storage_init()
             sas_token = generate_blob_sas(
-                account_name=account_name,
-                container_name=CONTAINER_NAME,
+                account_name=storage.account_name,
+                container_name=storage.CONTAINER_NAME,
                 blob_name=blob.key,
-                account_key=account_key,
+                account_key=storage.account_key,
                 permission=BlobSasPermissions(read=True),
                 start=datetime.utcnow() - timedelta(minutes=5),  # Allow for clock skew
                 expiry=datetime.utcnow() + timedelta(hours=1),
                 content_disposition=(f'attachment; filename="{blob.filename}"' if download else None),
             )
-            url = f"https://{account_name}.blob.core.windows.net/{CONTAINER_NAME}/{blob.key}?{sas_token}"
+            url = f"https://{storage.account_name}.blob.core.windows.net/{storage.CONTAINER_NAME}/{blob.key}?{sas_token}"
             results.append({
                 "filename": blob.filename,
                 "content_type": blob.content_type,
@@ -696,7 +703,7 @@ async def create_unit_comment(
             raw_bytes = await file.read()
             normalized_bytes, norm_filename, norm_ct = normalize_image_for_web(raw_bytes, file.filename, file.content_type)
             blob_key = f"unit-comments/{new_comment.id}/{uuid.uuid4()}-{norm_filename}"
-            blob_client = blob_service_client.get_blob_client(container=CONTAINER_NAME, blob=blob_key)
+            blob_client = storage.blob_service_client.get_blob_client(container=storage.CONTAINER_NAME, blob=blob_key)
             blob_client.upload_blob(normalized_bytes, overwrite=True, content_type=norm_ct)
 
             blob_row = ActiveStorageBlob(
