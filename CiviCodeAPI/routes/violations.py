@@ -3,7 +3,8 @@ from fastapi import APIRouter, HTTPException, Depends, Body, UploadFile, File, F
 from sqlalchemy.orm import Session, joinedload
 from typing import List
 from azure.storage.blob import generate_blob_sas, BlobSasPermissions
-from models import Violation, Citation, ActiveStorageAttachment, ActiveStorageBlob, User
+from models import Violation, Citation, ActiveStorageAttachment, ActiveStorageBlob, User, Notification
+from email_service import send_notification_email
 import schemas
 from database import get_db
 from sqlalchemy import desc
@@ -195,6 +196,35 @@ def add_violation_comment(violation_id: int, comment: schemas.ViolationCommentCr
     db.add(new_comment)
     db.commit()
     db.refresh(new_comment)
+
+    # Notify the assigned user on the violation (if different from author)
+    try:
+        if getattr(violation, 'user_id', None) and int(violation.user_id) != int(new_comment.user_id):
+            notif = Notification(
+                title="New comment on violation",
+                body=(new_comment.content or "").strip(),
+                inspection_id=None,
+                comment_id=new_comment.id,  # reused across comment types for origin resolution
+                user_id=int(violation.user_id),
+                read=False,
+            )
+            db.add(notif)
+            db.commit()
+            # Best-effort email
+            try:
+                target_user = db.query(models.User).filter(models.User.id == int(violation.user_id)).first()
+                if target_user and getattr(target_user, 'email', None):
+                    send_notification_email(
+                        subject="New violation comment",
+                        body=new_comment.content or "",
+                        to_email=target_user.email,
+                        inspection_id=None,
+                    )
+            except Exception:
+                pass
+    except Exception:
+        # Do not fail the request due to notification issues
+        db.rollback()
     # Optionally, fetch user info for response
     user = db.query(models.User).filter(models.User.id == new_comment.user_id).first()
     user_response = schemas.UserResponse.from_orm(user) if user else None
@@ -227,6 +257,35 @@ async def add_violation_comment_with_attachments(
     db.add(new_comment)
     db.commit()
     db.refresh(new_comment)
+
+    # Notify the assigned user on the violation (if different from author)
+    try:
+        if getattr(violation, 'user_id', None) and int(violation.user_id) != int(new_comment.user_id):
+            notif = Notification(
+                title="New comment on violation",
+                body=(new_comment.content or "").strip(),
+                inspection_id=None,
+                comment_id=new_comment.id,
+                user_id=int(violation.user_id),
+                read=False,
+            )
+            db.add(notif)
+            db.commit()
+            # Best-effort email
+            try:
+                target_user = db.query(models.User).filter(models.User.id == int(violation.user_id)).first()
+                if target_user and getattr(target_user, 'email', None):
+                    send_notification_email(
+                        subject="New violation comment",
+                        body=new_comment.content or "",
+                        to_email=target_user.email,
+                        inspection_id=None,
+                    )
+            except Exception:
+                pass
+    except Exception:
+        # Do not fail the request due to notification issues
+        db.rollback()
 
     # Upload attachments (if any)
     for file in files:

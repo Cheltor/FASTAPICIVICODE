@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends, status, Form
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from database import get_db
-from models import Notification, Inspection, User, Comment, Address, Unit, ContactComment, Contact
+from models import Notification, Inspection, User, Comment, Address, Unit, ContactComment, Contact, ViolationComment, Violation
 from schemas import NotificationCreate, NotificationResponse
 from fastapi.security import OAuth2PasswordBearer
 import jwt
@@ -59,6 +59,18 @@ def _decorate_origin(db: Session, notif: Notification) -> NotificationResponse:
                 origin_type = 'contact_comment'
                 origin_label = getattr(contact, 'name', None) or f"Contact #{getattr(cc, 'contact_id', '')}"
                 origin_url_path = f"/contacts/{cc.contact_id}"
+            else:
+                # Final fallback: this id could correspond to a ViolationComment
+                vc = db.query(ViolationComment).filter(ViolationComment.id == notif.comment_id).first()
+                if vc:
+                    vio = db.query(Violation).filter(Violation.id == vc.violation_id).first()
+                    addr = db.query(Address).filter(Address.id == vio.address_id).first() if vio else None
+                    origin_type = 'violation_comment'
+                    if vio and addr:
+                        origin_label = f"Violation at {addr.combadd or ('Address #' + str(addr.id))}"
+                    else:
+                        origin_label = f"Violation #{getattr(vc, 'violation_id', '')}"
+                    origin_url_path = f"/violation/{vc.violation_id}"
 
     return NotificationResponse(
         id=notif.id,

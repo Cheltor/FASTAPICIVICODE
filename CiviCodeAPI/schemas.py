@@ -209,6 +209,7 @@ class CommentResponse(CommentBase):
     user: UserResponse  # Include the user response here for returning full user data
     unit_id: Optional[int] = None
     combadd: Optional[str] = None
+    mentions: Optional[List[UserResponse]] = None
     created_at: datetime
     updated_at: datetime
 
