@@ -14,14 +14,27 @@ from schemas import (
     UnitResponse,
 )
 from database import get_db
+from models import Mention
 from storage import blob_service_client, container_client, account_name, account_key, CONTAINER_NAME
 from image_utils import normalize_image_for_web
 import os
 import logging
 import uuid
 import jwt
+import re
+from email_service import send_notification_email
 
 router = APIRouter()
+@router.get("/comments/{comment_id}/mentions", response_model=List[UserResponse])
+def get_comment_mentions(comment_id: int, db: Session = Depends(get_db)):
+    """Return the list of users mentioned in a given comment."""
+    mentions = (
+        db.query(User)
+        .join(Mention, Mention.user_id == User.id)
+        .filter(Mention.comment_id == comment_id)
+        .all()
+    )
+    return mentions
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -117,6 +130,48 @@ def create_comment(comment: CommentCreate, db: Session = Depends(get_db)):
     db.add(new_comment)
     db.commit()
     db.refresh(new_comment)
+
+    # Detect @username mentions and create notifications
+    try:
+        MENTION_RE = re.compile(r"@([A-Za-z0-9@._-]+)")
+        usernames = set(MENTION_RE.findall(new_comment.content or ""))
+        if usernames:
+            users = db.query(User).filter(User.name.in_(list(usernames))).all()
+            for u in users:
+                if u.id == new_comment.user_id:
+                    continue
+                # Create Notification for existing notifications table
+                try:
+                    notif = None
+                    from models import Notification, Mention
+                    notif = Notification(
+                        title=f"You were mentioned",
+                        body=f"You were mentioned in a comment: {new_comment.content[:200]}",
+                        comment_id=new_comment.id,
+                        user_id=int(u.id),
+                        read=False,
+                    )
+                    db.add(notif)
+                    db.commit()
+                except Exception:
+                    db.rollback()
+                # Create Mention row
+                try:
+                    m = Mention(comment_id=new_comment.id, user_id=int(u.id), actor_id=new_comment.user_id)
+                    db.add(m)
+                    db.commit()
+                except Exception:
+                    db.rollback()
+                # Send email (best effort)
+                try:
+                    target_email = u.email
+                    if target_email:
+                        send_notification_email(subject="You were mentioned", body=new_comment.content, to_email=target_email, inspection_id=None)
+                except Exception:
+                    pass
+    except Exception:
+        # don't let mention handling break comment creation
+        pass
     logger.debug(f"Created comment with ID: {new_comment.id}, unit_id: {new_comment.unit_id}")
     return new_comment
 
@@ -294,6 +349,7 @@ async def create_address_comment(
     content: str = Form(...),
     user_id: int = Form(...),
     unit_id: Optional[int] = Form(None),
+    mentioned_user_ids: Optional[str] = Form(None),
     files: List[UploadFile] = File([]),
     db: Session = Depends(get_db),
 ):
@@ -301,6 +357,56 @@ async def create_address_comment(
     db.add(new_comment)
     db.commit()
     db.refresh(new_comment)
+
+    # Detect mentions in form-based comment (prefer explicit ids from frontend)
+    try:
+        from models import Notification, Mention
+        ids: set[int] = set()
+        if mentioned_user_ids:
+            for part in str(mentioned_user_ids).split(','):
+                try:
+                    val = int(part.strip())
+                    if val:
+                        ids.add(val)
+                except Exception:
+                    continue
+        if not ids:
+            # fallback to parsing @names if ids not provided
+            MENTION_RE = re.compile(r"@([A-Za-z0-9@._\- ]+)")
+            usernames = set(MENTION_RE.findall(content or ""))
+            if usernames:
+                users = db.query(User).filter(User.name.in_(list(usernames))).all()
+                ids = {int(u.id) for u in users}
+
+        for uid in ids:
+            if uid == user_id:
+                continue
+            try:
+                notif = Notification(
+                    title=f"You were mentioned",
+                    body=f"You were mentioned in a comment: {content[:200]}",
+                    comment_id=new_comment.id,
+                    user_id=int(uid),
+                    read=False,
+                )
+                db.add(notif)
+                db.commit()
+            except Exception:
+                db.rollback()
+            try:
+                m = Mention(comment_id=new_comment.id, user_id=int(uid), actor_id=user_id)
+                db.add(m)
+                db.commit()
+            except Exception:
+                db.rollback()
+            try:
+                u = db.query(User).filter(User.id == int(uid)).first()
+                if u and u.email:
+                    send_notification_email(subject="You were mentioned", body=content, to_email=u.email, inspection_id=None)
+            except Exception:
+                pass
+    except Exception:
+        pass
 
     for file in files:
         try:
@@ -376,6 +482,7 @@ async def create_contact_comment(
     contact_id: int,
     comment: str = Form(...),
     user_id: int = Form(...),
+    mentioned_user_ids: Optional[str] = Form(None),
     files: List[UploadFile] = File([]),
     db: Session = Depends(get_db),
 ):
@@ -384,6 +491,55 @@ async def create_contact_comment(
     db.add(new_comment)
     db.commit()
     db.refresh(new_comment)
+
+    # Detect mentions in contact comment (prefer explicit ids from frontend)
+    try:
+        from models import Notification, Mention
+        ids: set[int] = set()
+        if mentioned_user_ids:
+            for part in str(mentioned_user_ids).split(','):
+                try:
+                    val = int(part.strip())
+                    if val:
+                        ids.add(val)
+                except Exception:
+                    continue
+        if not ids:
+            MENTION_RE = re.compile(r"@([A-Za-z0-9@._\- ]+)")
+            usernames = set(MENTION_RE.findall(comment or ""))
+            if usernames:
+                users = db.query(User).filter(User.name.in_(list(usernames))).all()
+                ids = {int(u.id) for u in users}
+
+        for uid in ids:
+            if uid == user_id:
+                continue
+            try:
+                notif = Notification(
+                    title=f"You were mentioned",
+                    body=f"You were mentioned in a contact comment: {comment[:200]}",
+                    comment_id=new_comment.id,
+                    user_id=int(uid),
+                    read=False,
+                )
+                db.add(notif)
+                db.commit()
+            except Exception:
+                db.rollback()
+            try:
+                m = Mention(comment_id=new_comment.id, user_id=int(uid), actor_id=user_id)
+                db.add(m)
+                db.commit()
+            except Exception:
+                db.rollback()
+            try:
+                u = db.query(User).filter(User.id == int(uid)).first()
+                if u and u.email:
+                    send_notification_email(subject="You were mentioned", body=comment, to_email=u.email, inspection_id=None)
+            except Exception:
+                pass
+    except Exception:
+        pass
 
     # Upload any attachments and create ActiveStorage records
     for file in files:

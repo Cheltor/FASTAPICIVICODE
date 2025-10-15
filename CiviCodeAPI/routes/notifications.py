@@ -37,10 +37,11 @@ def list_notifications(db: Session = Depends(get_db), current_user_id: int = Dep
 
 @router.post("/notifications", response_model=NotificationResponse, status_code=status.HTTP_201_CREATED)
 def create_notification(payload: NotificationCreate, db: Session = Depends(get_db), current_user_id: int = Depends(_get_current_user_id)):
-    # basic validation
-    inspection = db.query(Inspection).filter(Inspection.id == payload.inspection_id).first()
-    if not inspection:
-        raise HTTPException(status_code=404, detail="Inspection not found")
+    # basic validation: inspection_id is optional now; comment_id is optional as well
+    if payload.inspection_id:
+        inspection = db.query(Inspection).filter(Inspection.id == payload.inspection_id).first()
+        if not inspection:
+            raise HTTPException(status_code=404, detail="Inspection not found")
     user = db.query(User).filter(User.id == payload.user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -52,6 +53,7 @@ def create_notification(payload: NotificationCreate, db: Session = Depends(get_d
         title=payload.title,
         body=payload.body,
         inspection_id=payload.inspection_id,
+        comment_id=getattr(payload, 'comment_id', None),
         user_id=payload.user_id,
         read=payload.read or False,
     )

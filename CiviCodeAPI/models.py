@@ -472,11 +472,26 @@ class Notification(Base):
     id = Column(BigInteger, primary_key=True, index=True)
     title = Column(String)
     body = Column(Text)
-    inspection_id = Column(BigInteger, ForeignKey('inspections.id'), nullable=False)
+    # allow notifications to be linked to an inspection OR a comment (or neither)
+    inspection_id = Column(BigInteger, ForeignKey('inspections.id'), nullable=True)
+    comment_id = Column(BigInteger, ForeignKey('comments.id'), nullable=True)
     user_id = Column(BigInteger, ForeignKey('users.id'), nullable=False)
     read = Column(Boolean, default=False)
     created_at = Column(DateTime, default=func.now(), nullable=False)  # Auto-generate created_at timestamp
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)  # Auto-update updated_at timestamp
+
+
+# Mentions (when a user is @-mentioned in a comment)
+class Mention(Base):
+    __tablename__ = "mentions"
+
+    id = Column(BigInteger, primary_key=True, index=True)
+    comment_id = Column(BigInteger, ForeignKey('comments.id'), nullable=False)
+    user_id = Column(BigInteger, ForeignKey('users.id'), nullable=False)  # recipient
+    actor_id = Column(BigInteger, ForeignKey('users.id'), nullable=True)  # who mentioned
+    is_read = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
 
 
 # Observations

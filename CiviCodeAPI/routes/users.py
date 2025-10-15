@@ -25,6 +25,16 @@ def create_access_token(data: dict, expires_delta: Union[timedelta, None] = None
 
 router = APIRouter()
 
+
+@router.get("/users/search", response_model=List[UserResponse])
+def search_users(q: str = "", db: Session = Depends(get_db)):
+    """Simple user search by name or email (used for @-mentions)."""
+    if not q:
+        return []
+    q_like = f"%{q}%"
+    users = db.query(User).filter((User.name.ilike(q_like)) | (User.email.ilike(q_like))).limit(20).all()
+    return users
+
 # Show all the users
 @router.get("/users/", response_model=List[UserResponse])
 def get_users(skip: int = 0, db: Session = Depends(get_db)):

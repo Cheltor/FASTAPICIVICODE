@@ -559,7 +559,8 @@ class ViolationCommentResponse(ViolationCommentBase):
 class NotificationBase(BaseModel):
     title: Optional[str] = None
     body: Optional[str] = None
-    inspection_id: int
+    inspection_id: Optional[int] = None
+    comment_id: Optional[int] = None
     user_id: int
     read: Optional[bool] = False
 
