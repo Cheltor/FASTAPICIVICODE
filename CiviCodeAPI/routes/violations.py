@@ -9,11 +9,17 @@ import schemas
 from database import get_db
 from sqlalchemy import desc
 import models
-from storage import blob_service_client, CONTAINER_NAME, account_name, account_key
+import storage
+from image_utils import normalize_image_for_web
+from media_service import ensure_blob_browser_safe
 import uuid
 import logging
 
 router = APIRouter()
+
+def _ensure_storage_init() -> None:
+    """Ensure Azure storage clients are initialized so account metadata is populated."""
+    storage.ensure_initialized()
 
 # Extend deadline for a violation
 @router.patch("/violation/{violation_id}/deadline", response_model=schemas.ViolationResponse)
@@ -292,7 +298,7 @@ async def add_violation_comment_with_attachments(
         try:
             content_bytes = await file.read()
             blob_key = f"violation-comments/{new_comment.id}/{uuid.uuid4()}-{file.filename}"
-            blob_client = blob_service_client.get_blob_client(container=CONTAINER_NAME, blob=blob_key)
+            blob_client = storage.blob_service_client.get_blob_client(container=storage.CONTAINER_NAME, blob=blob_key)
             blob_client.upload_blob(content_bytes, overwrite=True, content_type=file.content_type)
 
             blob_row = ActiveStorageBlob(
@@ -398,6 +404,7 @@ def reopen_violation(violation_id: int, db: Session = Depends(get_db)):
 @router.get("/violation/{violation_id}/photos")
 def get_violation_photos(violation_id: int, download: bool = False, db: Session = Depends(get_db)):
     """Return signed URLs for attachments on a Violation, similar to comment photos."""
+    _ensure_storage_init()
     violation = db.query(models.Violation).filter(models.Violation.id == violation_id).first()
     if not violation:
         # Keep behavior lenient (like comments): return empty list if missing
@@ -422,31 +429,31 @@ def get_violation_photos(violation_id: int, download: bool = False, db: Session 
             # Continue with the original blob if conversion fails
         try:
             sas_token = generate_blob_sas(
-                account_name=account_name,
-                container_name=CONTAINER_NAME,
+                account_name=storage.account_name,
+                container_name=storage.CONTAINER_NAME,
                 blob_name=blob.key,
-                account_key=account_key,
+                account_key=storage.account_key,
                 permission=BlobSasPermissions(read=True),
                 start=datetime.utcnow() - timedelta(minutes=5),
                 expiry=datetime.utcnow() + timedelta(hours=1),
                 content_disposition=(f'attachment; filename="{blob.filename}"' if download else None),
             )
-            url = f"https://{account_name}.blob.core.windows.net/{CONTAINER_NAME}/{blob.key}?{sas_token}"
+            url = f"https://{storage.account_name}.blob.core.windows.net/{storage.CONTAINER_NAME}/{blob.key}?{sas_token}"
             poster_url = None
             if (blob.content_type or "").startswith("video/") and blob.key.lower().endswith('.mp4'):
                 base = blob.key[:-4]
                 poster_key = f"{base}-poster.jpg"
                 try:
                     poster_sas = generate_blob_sas(
-                        account_name=account_name,
-                        container_name=CONTAINER_NAME,
+                        account_name=storage.account_name,
+                        container_name=storage.CONTAINER_NAME,
                         blob_name=poster_key,
-                        account_key=account_key,
+                        account_key=storage.account_key,
                         permission=BlobSasPermissions(read=True),
                         start=datetime.utcnow() - timedelta(minutes=5),
                         expiry=datetime.utcnow() + timedelta(hours=1),
                     )
-                    poster_url = f"https://{account_name}.blob.core.windows.net/{CONTAINER_NAME}/{poster_key}?{poster_sas}"
+                    poster_url = f"https://{storage.account_name}.blob.core.windows.net/{storage.CONTAINER_NAME}/{poster_key}?{poster_sas}"
                 except Exception:
                     poster_url = None
             results.append({
@@ -464,6 +471,7 @@ def get_violation_photos(violation_id: int, download: bool = False, db: Session 
 # Fetch attachments for a specific violation comment
 @router.get("/violation/comment/{comment_id}/attachments")
 def get_violation_comment_attachments(comment_id: int, download: bool = False, db: Session = Depends(get_db)):
+    _ensure_storage_init()
     vc = db.query(models.ViolationComment).filter(models.ViolationComment.id == comment_id).first()
     if not vc:
         raise HTTPException(status_code=404, detail="ViolationComment not found")
@@ -481,16 +489,16 @@ def get_violation_comment_attachments(comment_id: int, download: bool = False, d
             continue
         try:
             sas_token = generate_blob_sas(
-                account_name=account_name,
-                container_name=CONTAINER_NAME,
+                account_name=storage.account_name,
+                container_name=storage.CONTAINER_NAME,
                 blob_name=blob.key,
-                account_key=account_key,
+                account_key=storage.account_key,
                 permission=BlobSasPermissions(read=True),
                 start=datetime.utcnow() - timedelta(minutes=5),
                 expiry=datetime.utcnow() + timedelta(hours=1),
                 content_disposition=(f'attachment; filename="{blob.filename}"' if download else None),
             )
-            url = f"https://{account_name}.blob.core.windows.net/{CONTAINER_NAME}/{blob.key}?{sas_token}"
+            url = f"https://{storage.account_name}.blob.core.windows.net/{storage.CONTAINER_NAME}/{blob.key}?{sas_token}"
             results.append({
                 "filename": blob.filename,
                 "content_type": blob.content_type,
@@ -510,6 +518,7 @@ async def upload_violation_photos(
     db: Session = Depends(get_db),
 ):
     """Upload attachments for a violation and create ActiveStorage records."""
+    _ensure_storage_init()
     violation = db.query(models.Violation).filter(models.Violation.id == violation_id).first()
     if not violation:
         raise HTTPException(status_code=404, detail="Violation not found")
@@ -521,7 +530,7 @@ async def upload_violation_photos(
             raw_bytes = await file.read()
             normalized_bytes, norm_filename, norm_ct = normalize_image_for_web(raw_bytes, file.filename, file.content_type)
             blob_key = f"violations/{violation_id}/{uuid.uuid4()}-{norm_filename}"
-            blob_client = blob_service_client.get_blob_client(container=CONTAINER_NAME, blob=blob_key)
+            blob_client = storage.blob_service_client.get_blob_client(container=storage.CONTAINER_NAME, blob=blob_key)
             blob_client.upload_blob(normalized_bytes, overwrite=True, content_type=norm_ct)
 
             blob_row = ActiveStorageBlob(

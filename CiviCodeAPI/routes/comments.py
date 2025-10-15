@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 
 # Ensure Azure storage lazy clients are initialized before using account info
 def _ensure_storage_init() -> None:
-    _ = storage.blob_service_client  # Touch to trigger lazy init and set account_name/account_key
+    storage.ensure_initialized()
 
 # Auth: Admin-only guard
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
@@ -427,6 +427,9 @@ async def create_address_comment(
     except Exception:
         pass
 
+    if files:
+        _ensure_storage_init()
+
     for file in files:
         try:
             raw_bytes = await file.read()
@@ -579,6 +582,9 @@ async def create_contact_comment(
         pass
 
     # Upload any attachments and create ActiveStorage records
+    if files:
+        _ensure_storage_init()
+
     for file in files:
         try:
             raw = await file.read()
@@ -785,6 +791,9 @@ async def create_unit_comment(
                 pass
     except Exception:
         pass
+
+    if files:
+        _ensure_storage_init()
 
     for file in files:
         try:

@@ -54,6 +54,10 @@ def _init_clients():
     account_name = params.get('AccountName')
     account_key = params.get('AccountKey')
 
+def ensure_initialized():
+    """Public helper to guarantee blob clients and account metadata are ready."""
+    _init_clients()
+
 
 class _LazyBlobServiceClient:
     def __getattr__(self, name):
