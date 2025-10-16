@@ -58,3 +58,43 @@ def delete_code(code_id: int, db: Session = Depends(get_db)):
     except Exception:
         db.rollback()
         raise HTTPException(status_code=400, detail="Unable to delete code due to related records")
+
+# Update a code by ID
+@router.patch("/codes/{code_id}", response_model=CodeResponse)
+@router.put("/codes/{code_id}", response_model=CodeResponse)
+def update_code(code_id: int, payload: CodeCreate, db: Session = Depends(get_db)):
+    code = db.query(Code).filter(Code.id == code_id).first()
+    if not code:
+        raise HTTPException(status_code=404, detail="Code not found")
+
+    # Enforce uniqueness of chapter+section if both provided
+    chapter = (payload.chapter or '').strip()
+    section = (payload.section or '').strip()
+    if chapter and section:
+        conflict = (
+            db.query(Code)
+            .filter(
+                func.lower(Code.chapter) == chapter.lower(),
+                func.lower(Code.section) == section.lower(),
+                Code.id != code_id
+            )
+            .first()
+        )
+        if conflict:
+            raise HTTPException(status_code=409, detail='Code with this chapter and section already exists')
+
+    # Apply updates
+    code.chapter = payload.chapter
+    code.section = payload.section
+    code.name = payload.name
+    code.description = payload.description
+
+    try:
+        db.add(code)
+        db.commit()
+        db.refresh(code)
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Unable to update code")
+
+    return code
