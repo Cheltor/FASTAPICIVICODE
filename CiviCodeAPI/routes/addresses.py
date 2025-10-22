@@ -516,6 +516,7 @@ def get_address_photos(address_id: int, db: Session = Depends(get_db)):
                     "content_type": blob.content_type,
                     "url": url,
                     "poster_url": poster_url,
+                    "created_at": attachment.created_at.isoformat() if getattr(attachment, 'created_at', None) else None,
                 })
 
     return photos

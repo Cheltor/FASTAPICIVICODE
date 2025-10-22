@@ -461,6 +461,7 @@ def get_violation_photos(violation_id: int, download: bool = False, db: Session 
                 "content_type": blob.content_type,
                 "url": url,
                 "poster_url": poster_url,
+                "created_at": attachment.created_at.isoformat() if getattr(attachment, 'created_at', None) else None,
             })
         except Exception as e:
             logging.exception(f"Failed generating SAS for blob {blob.key}: {e}")
