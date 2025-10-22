@@ -63,21 +63,63 @@ def _require_admin(token: str = Depends(oauth2_scheme), db: Session = Depends(ge
         raise HTTPException(status_code=403, detail="Admin access required")
     return user
 
-# Get all comments (augmented with address combadd and user)
+# Get recent comments with optional pagination; batches related data to avoid N+1
 @router.get("/comments/", response_model=List[CommentResponse])
-def get_comments(skip: int = 0, db: Session = Depends(get_db)):
-    comments = db.query(Comment).order_by(Comment.created_at.desc()).offset(skip).all()
-    results: List[CommentResponse] = []
-    for c in comments:
-        user = db.query(User).filter(User.id == c.user_id).first()
-        combadd = None
-        # Lazy load combadd via address_id to avoid heavy join
+def get_comments(skip: int = 0, limit: int = 200, db: Session = Depends(get_db)):
+    # Pull a page of comments in newest-first order
+    q = db.query(Comment).order_by(Comment.created_at.desc())
+    if skip:
+        q = q.offset(skip)
+    if limit:
+        q = q.limit(limit)
+    comments = q.all()
+
+    if not comments:
+        return []
+
+    # Gather unique ids for batch lookups
+    user_ids = {int(c.user_id) for c in comments if c.user_id is not None}
+    address_ids = {int(c.address_id) for c in comments if c.address_id is not None}
+    comment_ids = {int(c.id) for c in comments}
+
+    # Batch fetch related users
+    users_by_id = {}
+    if user_ids:
+        for u in db.query(User).filter(User.id.in_(list(user_ids))).all():
+            users_by_id[int(u.id)] = u
+
+    # Batch fetch address combadd
+    combadd_by_address_id = {}
+    if address_ids:
         try:
             from models import Address
-            addr = db.query(Address).filter(Address.id == c.address_id).first()
-            combadd = addr.combadd if addr else None
+            for addr in db.query(Address).filter(Address.id.in_(list(address_ids))).all():
+                combadd_by_address_id[int(addr.id)] = addr.combadd
         except Exception:
-            combadd = None
+            combadd_by_address_id = {}
+
+    # Batch fetch mentions -> list of UserResponse per comment
+    mentions_by_comment: dict[int, list[User]] = {cid: [] for cid in comment_ids}
+    try:
+        if comment_ids:
+            # Join to users so the frontend doesn't need to refetch
+            rows = (
+                db.query(User, Mention)
+                .join(Mention, Mention.user_id == User.id)
+                .filter(Mention.comment_id.in_(list(comment_ids)))
+                .all()
+            )
+            for u, m in rows:
+                mentions_by_comment[int(m.comment_id)].append(u)
+    except Exception:
+        pass
+
+    # Build responses
+    results: List[CommentResponse] = []
+    for c in comments:
+        user = users_by_id.get(int(c.user_id)) if c.user_id is not None else None
+        combadd = combadd_by_address_id.get(int(c.address_id)) if c.address_id is not None else None
+        mentions_users = mentions_by_comment.get(int(c.id), [])
         results.append(CommentResponse(
             id=c.id,
             content=c.content,
@@ -86,6 +128,7 @@ def get_comments(skip: int = 0, db: Session = Depends(get_db)):
             user=UserResponse.from_orm(user) if user else None,
             unit_id=c.unit_id,
             combadd=combadd,
+            mentions=[UserResponse.from_orm(u) for u in mentions_users] if mentions_users else None,
             created_at=c.created_at,
             updated_at=c.updated_at,
         ))

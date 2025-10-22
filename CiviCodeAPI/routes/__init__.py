@@ -7,6 +7,7 @@ from .comments import router as comments_router
 from .citations import router as citations_router
 from .inspections import router as inspections_router
 from .codes import router as codes_router
+from .codes_sync_mvp import router as codes_sync_mvp_router
 from .licenses import router as licenses_router
 from .dashboard import router as dashboard_router
 from .permits import router as permits_router
@@ -27,6 +28,7 @@ __all__ = [
     "citations_router",
     "inspections_router",
     "codes_router",
+    "codes_sync_mvp_router",
     "licenses_router",
     "dashboard_router",
     "permits_router",
