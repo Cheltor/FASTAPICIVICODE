@@ -10,7 +10,24 @@ from media_service import ensure_blob_browser_safe
 from database import get_db  # Ensure get_db is imported before use
 from models import Address, Comment, Violation, Inspection, Unit, ActiveStorageAttachment, ActiveStorageBlob, Contact, AddressContact, User
 import models
-from schemas import AddressCreate, AddressResponse, CommentResponse, ViolationResponse, InspectionResponse, ViolationCreate, CommentCreate, InspectionCreate, UnitResponse, UnitCreate, ContactResponse, ContactCreate
+from schemas import (
+    AddressCreate,
+    AddressResponse,
+    CommentResponse,
+    ViolationResponse,
+    InspectionResponse,
+    ViolationCreate,
+    CommentCreate,
+    InspectionCreate,
+    UnitResponse,
+    UnitCreate,
+    ContactResponse,
+    ContactCreate,
+    SDATRefreshRequest,
+    SDATRefreshResponse,
+)
+
+from sdat_client import fetch_owner_info
 
 router = APIRouter()
 
@@ -133,6 +150,98 @@ def get_address(address_id: int, db: Session = Depends(get_db)):
     if not address:
         raise HTTPException(status_code=404, detail="Address not found")
     return address
+
+
+def _normalize_string(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    trimmed = value.strip()
+    return trimmed or None
+
+
+@router.post(
+    "/addresses/{address_id}/refresh-owner",
+    response_model=SDATRefreshResponse,
+)
+def refresh_owner_from_sdat(
+    address_id: int,
+    payload: SDATRefreshRequest = Body(default=None),
+    db: Session = Depends(get_db),
+):
+    address = db.query(Address).filter(Address.id == address_id).first()
+    if not address:
+        raise HTTPException(status_code=404, detail="Address not found")
+
+    lookup = payload or SDATRefreshRequest()
+
+    county = _normalize_string(lookup.county) or "17"
+    district = (
+        _normalize_string(lookup.district)
+        or _normalize_string(getattr(address, "district", None))
+    )
+    account_number = (
+        _normalize_string(lookup.account_number)
+        or _normalize_string(getattr(address, "property_id", None))
+        or _normalize_string(getattr(address, "pid", None))
+    )
+
+    if not account_number:
+        raise HTTPException(
+            status_code=400,
+            detail="Missing SDAT account number. Provide account_number or populate property_id/pid on the address.",
+        )
+
+    try:
+        owner_info = fetch_owner_info(
+            county=county,
+            account_number=account_number,
+            district=district,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except Exception as exc:  # pragma: no cover - defensive guard
+        raise HTTPException(status_code=500, detail="Unexpected SDAT lookup error") from exc
+
+    if not owner_info.owner_name and not owner_info.mailing_lines:
+        raise HTTPException(
+            status_code=404,
+            detail="SDAT response did not include owner information. Check the district and account number.",
+        )
+
+    updated_fields: List[str] = []
+
+    def assign(field: str, value: Optional[str]):
+        nonlocal updated_fields
+        new_value = _normalize_string(value)
+        if new_value is None:
+            return
+        current = getattr(address, field, None)
+        current_norm = _normalize_string(current) if isinstance(current, str) else current
+        if current_norm != new_value:
+            setattr(address, field, new_value)
+            updated_fields.append(field)
+
+    assign("ownername", owner_info.owner_name)
+    assign("owneraddress", owner_info.owner_address)
+    assign("ownercity", owner_info.owner_city)
+    assign("ownerstate", owner_info.owner_state)
+    assign("ownerzip", owner_info.owner_zip)
+
+    # Only populate identifiers if we have data and fields are blank.
+    if not _normalize_string(getattr(address, "district", None)) and owner_info.rendered_district:
+        assign("district", owner_info.rendered_district)
+    if not _normalize_string(getattr(address, "property_id", None)) and owner_info.rendered_account:
+        assign("property_id", owner_info.rendered_account)
+
+    db.commit()
+    db.refresh(address)
+
+    return SDATRefreshResponse(
+        address=address,
+        updated_fields=updated_fields,
+        source_url=owner_info.source_url,
+        mailing_lines=owner_info.mailing_lines,
+    )
 
 # Create a new address
 @router.post("/addresses/", response_model=AddressResponse)

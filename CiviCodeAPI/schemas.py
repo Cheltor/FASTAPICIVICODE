@@ -51,6 +51,20 @@ class AddressResponse(AddressCreate):
     class Config:
         from_attributes = True
 
+
+class SDATRefreshRequest(BaseModel):
+    county: Optional[str] = None
+    district: Optional[str] = None
+    account_number: Optional[str] = None
+
+
+class SDATRefreshResponse(BaseModel):
+    address: AddressResponse
+    updated_fields: List[str] = Field(default_factory=list)
+    source_url: Optional[str] = None
+    mailing_lines: List[str] = Field(default_factory=list)
+
+
 # Pydantic schema for User
 class UserBase(BaseModel):
     email: str
