@@ -47,6 +47,72 @@ def _create_assignment_notification(db: Session, inspection: Inspection, inspect
         # Silent failure; we don't want assignment to fail due to notification
         pass
 
+def _notify_admins_unassigned_complaint(db: Session, inspection: Inspection):
+    """
+    Alert all admins whenever a complaint is created without an inspector assignment.
+    """
+    source_label = (inspection.source or "").lower()
+    if source_label != "complaint":
+        return
+    if inspection.inspector_id:
+        return
+
+    admins = db.query(User).filter(User.role == 3).all()
+    recipients = []
+    seen_ids = set()
+    for admin in admins:
+        try:
+            admin_id = int(admin.id)
+        except (TypeError, ValueError):
+            continue
+        if admin_id in seen_ids:
+            continue
+        seen_ids.add(admin_id)
+        recipients.append((admin_id, admin))
+
+    if not recipients:
+        return
+
+    address_label = None
+    if inspection.address_id:
+        address = db.query(Address).filter(Address.id == inspection.address_id).first()
+        if address and getattr(address, "combadd", None):
+            address_label = address.combadd
+
+    location_text = ""
+    if address_label:
+        location_text = f" at {address_label}"
+    elif inspection.address_id:
+        location_text = f" at address #{inspection.address_id}"
+
+    title = "New complaint needs assignment"
+    body = f"Complaint #{inspection.id}{location_text} does not have an inspector assigned. Please review and assign an inspector."
+
+    try:
+        for admin_id, _admin in recipients:
+            notif = Notification(
+                title=title,
+                body=body,
+                inspection_id=inspection.id,
+                user_id=admin_id,
+                read=False,
+            )
+            db.add(notif)
+        db.commit()
+    except Exception:
+        db.rollback()
+        return
+
+    for _admin_id, admin in recipients:
+        email = getattr(admin, "email", None)
+        if not email:
+            continue
+        try:
+            send_notification_email(subject=title, body=body, to_email=email, inspection_id=inspection.id)
+        except Exception:
+            # Ignore email failures; the in-app notification already exists
+            continue
+
 # Get all inspections
 @router.get("/inspections/", response_model=List[InspectionResponse])
 def get_inspections(skip: int = 0, db: Session = Depends(get_db)):
@@ -225,8 +291,9 @@ async def create_inspection(
 
     db.commit()
 
-    # Notification: if inspector assigned at creation, notify them
+    # Notifications
     _create_assignment_notification(db, new_inspection, inspector_id)
+    _notify_admins_unassigned_complaint(db, new_inspection)
 
     return new_inspection
 

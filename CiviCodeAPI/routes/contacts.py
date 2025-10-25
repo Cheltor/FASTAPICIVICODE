@@ -77,25 +77,52 @@ def create_contact(contact: ContactCreate, db: Session = Depends(get_db)):
 # Get a specific contact by ID
 @router.get("/contacts/search", response_model=List[ContactResponse])
 def search_contacts(
-    query: str = Query("", description="Search term for contact name or email"),
+    query: str = Query("", description="Search term for contact name, email, or phone"),
     limit: int = Query(5, ge=1, le=50, description="Limit the number of results"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    print(f"Received query: {query}, limit: {limit}")  # Debug print
+    search_term = (query or "").strip()
+    like_pattern = f"%{search_term}%"
+    filters = [
+        Contact.name.ilike(like_pattern),
+        Contact.email.ilike(like_pattern),
+    ]
+    if search_term:
+        filters.append(Contact.phone.ilike(like_pattern))
 
-    contacts = (
+    base_results = (
         db.query(Contact)
-        .filter(
-            or_(
-                Contact.name.ilike(f"%{query}%"),
-                Contact.email.ilike(f"%{query}%")
-            )
-        )
-        .limit(limit)
+        .filter(or_(*filters))
+        .order_by(Contact.created_at.desc())
+        .limit(limit * 3)
         .all()
     )
-    
-    return contacts
+
+    digits = "".join(ch for ch in search_term if ch.isdigit())
+    digit_results = []
+    if digits:
+        phone_digits_expr = func.coalesce(Contact.phone, "")
+        for ch in ("-", " ", "(", ")", ".", "+"):
+            phone_digits_expr = func.replace(phone_digits_expr, ch, "")
+        digit_results = (
+            db.query(Contact)
+            .filter(phone_digits_expr.ilike(f"%{digits}%"))
+            .order_by(Contact.created_at.desc())
+            .limit(limit * 3)
+            .all()
+        )
+
+    combined = []
+    seen_ids = set()
+    for contact in digit_results + base_results:
+        if not contact or contact.id in seen_ids:
+            continue
+        seen_ids.add(contact.id)
+        combined.append(contact)
+        if len(combined) >= limit:
+            break
+
+    return combined
 
 # Get a specific contact by ID
 @router.get("/contacts/{contact_id}", response_model=ContactDetailResponse)
