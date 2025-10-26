@@ -494,6 +494,18 @@ class Mention(Base):
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
 
 
+# Links a general Comment to one or more Contacts when %Contact mentions are used
+class CommentContactLink(Base):
+    __tablename__ = "comment_contact_links"
+
+    id = Column(BigInteger, primary_key=True, index=True)
+    comment_id = Column(BigInteger, ForeignKey('comments.id', ondelete='CASCADE'), nullable=False)
+    contact_id = Column(BigInteger, ForeignKey('contacts.id', ondelete='CASCADE'), nullable=False)
+    actor_id = Column(BigInteger, ForeignKey('users.id'), nullable=True)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+
+
 # Observations
 class Observation(Base):
     __tablename__ = "observations"

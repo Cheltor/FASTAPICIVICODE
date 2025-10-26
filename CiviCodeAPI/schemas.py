@@ -224,6 +224,7 @@ class CommentResponse(CommentBase):
     unit_id: Optional[int] = None
     combadd: Optional[str] = None
     mentions: Optional[List[UserResponse]] = None
+    contact_mentions: Optional[List[ContactResponse]] = None
     created_at: datetime
     updated_at: datetime
 

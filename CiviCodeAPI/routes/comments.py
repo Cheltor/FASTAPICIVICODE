@@ -4,17 +4,17 @@ from sqlalchemy.orm import Session
 from azure.storage.blob import generate_blob_sas, BlobSasPermissions
 from datetime import datetime, timedelta
 from typing import List, Optional
-from models import Comment, ContactComment, ActiveStorageAttachment, ActiveStorageBlob, User, Unit
+from models import Comment, ContactComment, ActiveStorageAttachment, ActiveStorageBlob, User, Unit, Contact, CommentContactLink, Mention
 from schemas import (
     CommentCreate,
     CommentResponse,
     ContactCommentCreate,
     ContactCommentResponse,
+    ContactResponse,
     UserResponse,
     UnitResponse,
 )
 from database import get_db
-from models import Mention
 import storage
 from image_utils import normalize_image_for_web
 from media_service import ensure_blob_browser_safe
@@ -24,6 +24,173 @@ import uuid
 import jwt
 import re
 from email_service import send_notification_email
+
+USER_MENTION_RE = re.compile(r"@([A-Za-z0-9@._\- ]+)")
+CONTACT_MENTION_RE = re.compile(r"%([A-Za-z0-9@._\- ]+)")
+
+
+def _parse_id_values(raw) -> set[int]:
+    ids: set[int] = set()
+    if raw is None:
+        return ids
+    if isinstance(raw, (list, tuple, set)):
+        iterable = raw
+    else:
+        cleaned = str(raw).replace(';', ',')
+        iterable = cleaned.split(',')
+    for part in iterable:
+        try:
+            val = int(str(part).strip())
+            if val:
+                ids.add(val)
+        except Exception:
+            continue
+    return ids
+
+
+def _collect_user_ids(db: Session, raw_ids, content: Optional[str]) -> set[int]:
+    ids = _parse_id_values(raw_ids)
+    if ids:
+        return ids
+    tokens = {token.strip() for token in USER_MENTION_RE.findall(content or '') if token and token.strip()}
+    if not tokens:
+        return set()
+    users = db.query(User).filter(User.name.in_(list(tokens))).all()
+    return {int(u.id) for u in users}
+
+
+def _collect_contact_ids(db: Session, raw_ids, content: Optional[str]) -> set[int]:
+    ids = _parse_id_values(raw_ids)
+    if ids:
+        return ids
+    tokens = {token.strip() for token in CONTACT_MENTION_RE.findall(content or '') if token and token.strip()}
+    if not tokens:
+        return set()
+    contacts = db.query(Contact).filter(Contact.name.in_(list(tokens))).all()
+    return {int(c.id) for c in contacts}
+
+
+def _store_contact_mentions(db: Session, comment_id: int, actor_id: Optional[int], contact_ids: set[int]) -> None:
+    if not contact_ids:
+        return
+    try:
+        existing_ids = {
+            int(link.contact_id)
+            for link in db.query(CommentContactLink).filter(CommentContactLink.comment_id == comment_id)
+        }
+        for cid in contact_ids:
+            if cid in existing_ids:
+                continue
+            db.add(CommentContactLink(comment_id=comment_id, contact_id=cid, actor_id=actor_id))
+        db.commit()
+    except Exception:
+        db.rollback()
+
+
+def _get_contact_mentions(db: Session, comment_id: int) -> List[Contact]:
+    try:
+        return (
+            db.query(Contact)
+            .join(CommentContactLink, CommentContactLink.contact_id == Contact.id)
+            .filter(CommentContactLink.comment_id == comment_id)
+            .all()
+        )
+    except Exception:
+        return []
+
+
+def _handle_user_mentions(
+    db: Session,
+    comment_id: int,
+    actor_id: Optional[int],
+    content: Optional[str],
+    raw_ids,
+    context_label: str,
+) -> None:
+    try:
+        from models import Notification
+
+        ids = _collect_user_ids(db, raw_ids, content)
+        if not ids:
+            return
+        snippet = (content or '')[:200]
+        for uid in ids:
+            if actor_id is not None and uid == actor_id:
+                try:
+                    m = Mention(comment_id=comment_id, user_id=int(uid), actor_id=actor_id)
+                    db.add(m)
+                    db.commit()
+                except Exception:
+                    db.rollback()
+                continue
+            try:
+                notif = Notification(
+                    title="You were mentioned",
+                    body=f"You were mentioned in a {context_label}: {snippet}",
+                    comment_id=comment_id,
+                    user_id=int(uid),
+                    read=False,
+                )
+                db.add(notif)
+                db.commit()
+            except Exception:
+                db.rollback()
+            try:
+                m = Mention(comment_id=comment_id, user_id=int(uid), actor_id=actor_id)
+                db.add(m)
+                db.commit()
+            except Exception:
+                db.rollback()
+            try:
+                user = db.query(User).filter(User.id == int(uid)).first()
+                if user and user.email:
+                    send_notification_email(subject="You were mentioned", body=content or '', to_email=user.email, inspection_id=None)
+            except Exception:
+                pass
+    except Exception:
+        # Mention handling should not break primary flow
+        pass
+
+
+def _build_comment_response(db: Session, comment: Comment) -> CommentResponse:
+    user = db.query(User).filter(User.id == comment.user_id).first() if comment.user_id else None
+    unit = db.query(Unit).filter(Unit.id == comment.unit_id).first() if comment.unit_id else None
+
+    combadd = None
+    if comment.address_id:
+        try:
+            from models import Address
+            address = db.query(Address).filter(Address.id == comment.address_id).first()
+            combadd = address.combadd if address else None
+        except Exception:
+            combadd = None
+
+    try:
+        user_mentions = (
+            db.query(User)
+            .join(Mention, Mention.user_id == User.id)
+            .filter(Mention.comment_id == comment.id)
+            .all()
+        )
+    except Exception:
+        user_mentions = []
+
+    contact_mentions = _get_contact_mentions(db, comment.id)
+
+    return CommentResponse(
+        id=comment.id,
+        content=comment.content,
+        user_id=comment.user_id,
+        address_id=comment.address_id,
+        user=UserResponse.from_orm(user) if user else None,
+        unit_id=comment.unit_id,
+        unit=UnitResponse.from_orm(unit) if unit else None,
+        combadd=combadd,
+        mentions=[UserResponse.from_orm(u) for u in user_mentions] if user_mentions else None,
+        contact_mentions=[ContactResponse.from_orm(c) for c in contact_mentions] if contact_mentions else None,
+        created_at=comment.created_at,
+        updated_at=comment.updated_at,
+    )
 
 router = APIRouter()
 @router.get("/comments/{comment_id}/mentions", response_model=List[UserResponse])
@@ -114,12 +281,27 @@ def get_comments(skip: int = 0, limit: int = 200, db: Session = Depends(get_db))
     except Exception:
         pass
 
+    contact_mentions_by_comment: dict[int, list[Contact]] = {cid: [] for cid in comment_ids}
+    try:
+        if comment_ids:
+            contact_rows = (
+                db.query(Contact, CommentContactLink)
+                .join(CommentContactLink, CommentContactLink.contact_id == Contact.id)
+                .filter(CommentContactLink.comment_id.in_(list(comment_ids)))
+                .all()
+            )
+            for contact, link in contact_rows:
+                contact_mentions_by_comment[int(link.comment_id)].append(contact)
+    except Exception:
+        pass
+
     # Build responses
     results: List[CommentResponse] = []
     for c in comments:
         user = users_by_id.get(int(c.user_id)) if c.user_id is not None else None
         combadd = combadd_by_address_id.get(int(c.address_id)) if c.address_id is not None else None
         mentions_users = mentions_by_comment.get(int(c.id), [])
+        contact_mentions = contact_mentions_by_comment.get(int(c.id), [])
         results.append(CommentResponse(
             id=c.id,
             content=c.content,
@@ -129,6 +311,7 @@ def get_comments(skip: int = 0, limit: int = 200, db: Session = Depends(get_db))
             unit_id=c.unit_id,
             combadd=combadd,
             mentions=[UserResponse.from_orm(u) for u in mentions_users] if mentions_users else None,
+            contact_mentions=[ContactResponse.from_orm(ct) for ct in contact_mentions] if contact_mentions else None,
             created_at=c.created_at,
             updated_at=c.updated_at,
         ))
@@ -171,7 +354,12 @@ def delete_comment(comment_id: int, db: Session = Depends(get_db), admin_user: U
 
 # Create a new comment (JSON payload, no files)
 @router.post("/comments/", response_model=CommentResponse)
-def create_comment(comment: CommentCreate, db: Session = Depends(get_db)):
+def create_comment(
+    comment: CommentCreate,
+    mentioned_user_ids: Optional[List[int]] = Body(default=None),
+    mentioned_contact_ids: Optional[List[int]] = Body(default=None),
+    db: Session = Depends(get_db),
+):
     logger.debug(f"Received payload: {comment.dict()}")
     logger.debug(f"Creating comment with content: {comment.content}, user_id: {comment.user_id}, unit_id: {comment.unit_id}")
     new_comment = Comment(**comment.dict())
@@ -179,55 +367,21 @@ def create_comment(comment: CommentCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(new_comment)
 
-    # Detect @username mentions and create notifications
-    try:
-        MENTION_RE = re.compile(r"@([A-Za-z0-9@._-]+)")
-        usernames = set(MENTION_RE.findall(new_comment.content or ""))
-        if usernames:
-            users = db.query(User).filter(User.name.in_(list(usernames))).all()
-            for u in users:
-                from models import Notification, Mention
-                if u.id == new_comment.user_id:
-                    # Save the mention for self, but skip notifications/emails
-                    try:
-                        m = Mention(comment_id=new_comment.id, user_id=int(u.id), actor_id=new_comment.user_id)
-                        db.add(m)
-                        db.commit()
-                    except Exception:
-                        db.rollback()
-                    continue
-                # Create Notification for others
-                try:
-                    notif = Notification(
-                        title=f"You were mentioned",
-                        body=f"You were mentioned in a comment: {new_comment.content[:200]}",
-                        comment_id=new_comment.id,
-                        user_id=int(u.id),
-                        read=False,
-                    )
-                    db.add(notif)
-                    db.commit()
-                except Exception:
-                    db.rollback()
-                # Create Mention row
-                try:
-                    m = Mention(comment_id=new_comment.id, user_id=int(u.id), actor_id=new_comment.user_id)
-                    db.add(m)
-                    db.commit()
-                except Exception:
-                    db.rollback()
-                # Send email (best effort)
-                try:
-                    target_email = u.email
-                    if target_email:
-                        send_notification_email(subject="You were mentioned", body=new_comment.content, to_email=target_email, inspection_id=None)
-                except Exception:
-                    pass
-    except Exception:
-        # don't let mention handling break comment creation
-        pass
+    _handle_user_mentions(
+        db=db,
+        comment_id=new_comment.id,
+        actor_id=new_comment.user_id,
+        content=new_comment.content,
+        raw_ids=mentioned_user_ids,
+        context_label="comment",
+    )
+
+    contact_ids = _collect_contact_ids(db, mentioned_contact_ids, new_comment.content)
+    if contact_ids:
+        _store_contact_mentions(db, new_comment.id, new_comment.user_id, contact_ids)
+
     logger.debug(f"Created comment with ID: {new_comment.id}, unit_id: {new_comment.unit_id}")
-    return new_comment
+    return _build_comment_response(db, new_comment)
 
 # Get all comments for a specific Address
 @router.get("/comments/address/{address_id}", response_model=List[CommentResponse])
@@ -241,6 +395,16 @@ def get_comments_by_address(address_id: int, db: Session = Depends(get_db)):
         unit = None
         if comment.unit_id:
             unit = db.query(Unit).filter(Unit.id == comment.unit_id).first()
+        try:
+            mentions_users = (
+                db.query(User)
+                .join(Mention, Mention.user_id == User.id)
+                .filter(Mention.comment_id == comment.id)
+                .all()
+            )
+        except Exception:
+            mentions_users = []
+        contact_mentions = _get_contact_mentions(db, comment.id)
         comment_responses.append(CommentResponse(
             id=comment.id,
             content=comment.content,
@@ -263,6 +427,8 @@ def get_comments_by_address(address_id: int, db: Session = Depends(get_db)):
                 created_at=unit.created_at,
                 updated_at=unit.updated_at
             ) if unit else None,
+            mentions=[UserResponse.from_orm(u) for u in mentions_users] if mentions_users else None,
+            contact_mentions=[ContactResponse.from_orm(c) for c in contact_mentions] if contact_mentions else None,
             created_at=comment.created_at,
             updated_at=comment.updated_at
         ))
@@ -275,6 +441,20 @@ def get_comments_by_contact(contact_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=422, detail="Invalid contact_id")
     comments = db.query(ContactComment).filter(ContactComment.contact_id == contact_id).order_by(ContactComment.created_at.desc()).all()
     return comments
+
+
+@router.get("/comments/contact/{contact_id}/mentioned", response_model=List[CommentResponse])
+def get_comments_mentioning_contact(contact_id: int, db: Session = Depends(get_db)):
+    if contact_id is None:
+        raise HTTPException(status_code=422, detail="Invalid contact_id")
+    linked_comments = (
+        db.query(Comment)
+        .join(CommentContactLink, CommentContactLink.comment_id == Comment.id)
+        .filter(CommentContactLink.contact_id == contact_id)
+        .order_by(Comment.created_at.desc())
+        .all()
+    )
+    return [_build_comment_response(db, comment) for comment in linked_comments]
 
 # Get a single ContactComment by ID (for admin editor)
 @router.get("/comments/contact/by-id/{comment_id}", response_model=ContactCommentResponse)
@@ -405,6 +585,7 @@ async def create_address_comment(
     user_id: int = Form(...),
     unit_id: Optional[int] = Form(None),
     mentioned_user_ids: Optional[str] = Form(None),
+    mentioned_contact_ids: Optional[str] = Form(None),
     files: List[UploadFile] = File([]),
     db: Session = Depends(get_db),
 ):
@@ -413,62 +594,18 @@ async def create_address_comment(
     db.commit()
     db.refresh(new_comment)
 
-    # Detect mentions in form-based comment (prefer explicit ids from frontend)
-    try:
-        from models import Notification, Mention
-        ids: set[int] = set()
-        if mentioned_user_ids:
-            for part in str(mentioned_user_ids).split(','):
-                try:
-                    val = int(part.strip())
-                    if val:
-                        ids.add(val)
-                except Exception:
-                    continue
-        if not ids:
-            # fallback to parsing @names if ids not provided
-            MENTION_RE = re.compile(r"@([A-Za-z0-9@._\- ]+)")
-            usernames = set(MENTION_RE.findall(content or ""))
-            if usernames:
-                users = db.query(User).filter(User.name.in_(list(usernames))).all()
-                ids = {int(u.id) for u in users}
+    _handle_user_mentions(
+        db=db,
+        comment_id=new_comment.id,
+        actor_id=user_id,
+        content=content,
+        raw_ids=mentioned_user_ids,
+        context_label="comment",
+    )
 
-        for uid in ids:
-            if uid == user_id:
-                # Save self mention but skip notification/email
-                try:
-                    m = Mention(comment_id=new_comment.id, user_id=int(uid), actor_id=user_id)
-                    db.add(m)
-                    db.commit()
-                except Exception:
-                    db.rollback()
-                continue
-            try:
-                notif = Notification(
-                    title=f"You were mentioned",
-                    body=f"You were mentioned in a comment: {content[:200]}",
-                    comment_id=new_comment.id,
-                    user_id=int(uid),
-                    read=False,
-                )
-                db.add(notif)
-                db.commit()
-            except Exception:
-                db.rollback()
-            try:
-                m = Mention(comment_id=new_comment.id, user_id=int(uid), actor_id=user_id)
-                db.add(m)
-                db.commit()
-            except Exception:
-                db.rollback()
-            try:
-                u = db.query(User).filter(User.id == int(uid)).first()
-                if u and u.email:
-                    send_notification_email(subject="You were mentioned", body=content, to_email=u.email, inspection_id=None)
-            except Exception:
-                pass
-    except Exception:
-        pass
+    contact_ids = _collect_contact_ids(db, mentioned_contact_ids, content)
+    if contact_ids:
+        _store_contact_mentions(db, new_comment.id, user_id, contact_ids)
 
     if files:
         _ensure_storage_init()
@@ -523,6 +660,7 @@ async def create_address_comment(
         )
     except Exception:
         mentions_users = []
+    contact_mentions = _get_contact_mentions(db, new_comment.id)
 
     return CommentResponse(
         id=new_comment.id,
@@ -547,6 +685,7 @@ async def create_address_comment(
             updated_at=unit.updated_at,
         ) if unit else None,
         mentions=[UserResponse.from_orm(u) for u in mentions_users] if mentions_users else None,
+        contact_mentions=[ContactResponse.from_orm(c) for c in contact_mentions] if contact_mentions else None,
         created_at=new_comment.created_at,
         updated_at=new_comment.updated_at,
     )
@@ -771,6 +910,7 @@ async def create_unit_comment(
     content: str = Form(...),
     user_id: int = Form(...),
     mentioned_user_ids: Optional[str] = Form(None),
+    mentioned_contact_ids: Optional[str] = Form(None),
     files: List[UploadFile] = File([]),
     db: Session = Depends(get_db),
 ):
@@ -779,61 +919,18 @@ async def create_unit_comment(
     db.commit()
     db.refresh(new_comment)
 
-    # Detect mentions for unit comment (prefer explicit ids from frontend)
-    try:
-        from models import Notification, Mention
-        ids: set[int] = set()
-        if mentioned_user_ids:
-            for part in str(mentioned_user_ids).split(','):
-                try:
-                    val = int(part.strip())
-                    if val:
-                        ids.add(val)
-                except Exception:
-                    continue
-        if not ids:
-            MENTION_RE = re.compile(r"@([A-Za-z0-9@._\- ]+)")
-            usernames = set(MENTION_RE.findall(content or ""))
-            if usernames:
-                users = db.query(User).filter(User.name.in_(list(usernames))).all()
-                ids = {int(u.id) for u in users}
+    _handle_user_mentions(
+        db=db,
+        comment_id=new_comment.id,
+        actor_id=user_id,
+        content=content,
+        raw_ids=mentioned_user_ids,
+        context_label="unit comment",
+    )
 
-        for uid in ids:
-            if uid == user_id:
-                # Save self mention but skip notification/email
-                try:
-                    m = Mention(comment_id=new_comment.id, user_id=int(uid), actor_id=user_id)
-                    db.add(m)
-                    db.commit()
-                except Exception:
-                    db.rollback()
-                continue
-            try:
-                notif = Notification(
-                    title=f"You were mentioned",
-                    body=f"You were mentioned in a unit comment: {content[:200]}",
-                    comment_id=new_comment.id,
-                    user_id=int(uid),
-                    read=False,
-                )
-                db.add(notif)
-                db.commit()
-            except Exception:
-                db.rollback()
-            try:
-                m = Mention(comment_id=new_comment.id, user_id=int(uid), actor_id=user_id)
-                db.add(m)
-                db.commit()
-            except Exception:
-                db.rollback()
-            try:
-                u = db.query(User).filter(User.id == int(uid)).first()
-                if u and u.email:
-                    send_notification_email(subject="You were mentioned", body=content, to_email=u.email, inspection_id=None)
-            except Exception:
-                pass
-    except Exception:
-        pass
+    contact_ids = _collect_contact_ids(db, mentioned_contact_ids, content)
+    if contact_ids:
+        _store_contact_mentions(db, new_comment.id, user_id, contact_ids)
 
     if files:
         _ensure_storage_init()
@@ -886,6 +983,7 @@ async def create_unit_comment(
         )
     except Exception:
         mentions_users = []
+    contact_mentions = _get_contact_mentions(db, new_comment.id)
 
     return CommentResponse(
         id=new_comment.id,
@@ -910,6 +1008,7 @@ async def create_unit_comment(
             updated_at=unit.updated_at,
         ) if unit else None,
         mentions=[UserResponse.from_orm(u) for u in mentions_users] if mentions_users else None,
+        contact_mentions=[ContactResponse.from_orm(c) for c in contact_mentions] if contact_mentions else None,
         created_at=new_comment.created_at,
         updated_at=new_comment.updated_at,
     )
