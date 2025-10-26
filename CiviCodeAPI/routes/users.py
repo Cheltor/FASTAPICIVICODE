@@ -1,17 +1,20 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from typing import List, Union
 from models import User
-from schemas import UserResponse, UserCreate, UserUpdate
+from schemas import UserResponse, UserCreate, UserUpdate, PasswordResetRequest, PasswordResetConfirm
 from database import get_db
-from utils import verify_password
+from utils import verify_password, hash_password
 from datetime import datetime, timedelta
 import jwt
+import secrets
+from email_service import send_password_reset_email, FRONTEND_BASE_URL
 
 SECRET_KEY = "trpdds2020"  
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 480
+PASSWORD_RESET_EXPIRE_MINUTES = 60
 
 def create_access_token(data: dict, expires_delta: Union[timedelta, None] = None):
     to_encode = data.copy()
@@ -124,3 +127,54 @@ def delete_user(user_id: int, db: Session = Depends(get_db)):
     db.delete(db_user)
     db.commit()
     return {"message": "User deleted successfully"}
+
+@router.post("/password/forgot")
+async def forgot_password(
+    payload: PasswordResetRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    user = db.query(User).filter(User.email == payload.email).first()
+    if user:
+        token = secrets.token_urlsafe(32)
+        user.reset_password_token = token
+        user.reset_password_sent_at = datetime.utcnow()
+        db.add(user)
+        db.commit()
+
+        reset_url = None
+        if FRONTEND_BASE_URL:
+            reset_url = f"{FRONTEND_BASE_URL.rstrip('/')}/reset-password?token={token}"
+        background_tasks.add_task(send_password_reset_email, user.email, reset_url)
+
+    # Always return success response to avoid leaking account existence
+    return {"message": "If an account exists for that email, a reset link has been sent."}
+
+@router.post("/password/reset")
+async def reset_password(
+    payload: PasswordResetConfirm,
+    db: Session = Depends(get_db)
+):
+    user = db.query(User).filter(User.reset_password_token == payload.token).first()
+    if not user or not user.reset_password_sent_at:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired reset token")
+
+    expiration_time = user.reset_password_sent_at + timedelta(minutes=PASSWORD_RESET_EXPIRE_MINUTES)
+    if datetime.utcnow() > expiration_time:
+        # Clear out expired token to avoid reuse
+        user.reset_password_token = None
+        user.reset_password_sent_at = None
+        db.add(user)
+        db.commit()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired reset token")
+
+    if len(payload.password) < 8:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Password must be at least 8 characters long")
+
+    user.encrypted_password = hash_password(payload.password)
+    user.reset_password_token = None
+    user.reset_password_sent_at = None
+    db.add(user)
+    db.commit()
+
+    return {"message": "Password updated successfully."}

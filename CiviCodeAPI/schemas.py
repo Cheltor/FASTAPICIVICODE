@@ -88,6 +88,13 @@ class UserResponse(UserBase):
 class UserUpdate(UserBase):
     password: Optional[str] = None
 
+class PasswordResetRequest(BaseModel):
+    email: str
+
+class PasswordResetConfirm(BaseModel):
+    token: str
+    password: str
+
 # Pydantic schema for Business
 class BusinessBase(BaseModel):
     name: Optional[str] = None
