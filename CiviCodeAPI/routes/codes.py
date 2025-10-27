@@ -1,9 +1,9 @@
 from fastapi import APIRouter, HTTPException, Depends
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 from typing import List
-from models import Code
-from schemas import CodeCreate, CodeResponse
+from models import Code, Violation, ViolationCode
+from schemas import CodeCreate, CodeResponse, CodeViolationSummary
 from database import get_db
 
 router = APIRouter()
@@ -11,12 +11,32 @@ router = APIRouter()
 # Get all codes
 @router.get("/codes/", response_model=List[CodeResponse])
 def get_codes(db: Session = Depends(get_db)):
+    counts = dict(
+        db.query(ViolationCode.code_id, func.count(ViolationCode.id))
+        .group_by(ViolationCode.code_id)
+        .all()
+    )
     # Prefer created_at if available, else fallback to id
     try:
         codes = db.query(Code).order_by(Code.created_at.desc()).all()
     except Exception:
         codes = db.query(Code).order_by(Code.id.desc()).all()
-    return codes
+
+    response_payload: List[CodeResponse] = []
+    for code in codes:
+        response_payload.append(
+            CodeResponse.model_validate({
+                "id": code.id,
+                "chapter": code.chapter,
+                "section": code.section,
+                "name": code.name,
+                "description": code.description,
+                "created_at": code.created_at,
+                "updated_at": code.updated_at,
+                "violation_count": counts.get(code.id, 0),
+            })
+        )
+    return response_payload
 
 # Create a new code
 @router.post("/codes/", response_model=CodeResponse)
@@ -44,7 +64,51 @@ def get_code(code_id: int, db: Session = Depends(get_db)):
     code = db.query(Code).filter(Code.id == code_id).first()
     if not code:
         raise HTTPException(status_code=404, detail="Code not found")
-    return code
+
+    violations = (
+        db.query(Violation)
+        .join(ViolationCode, ViolationCode.violation_id == Violation.id)
+        .options(joinedload(Violation.address))
+        .filter(ViolationCode.code_id == code_id)
+        .order_by(Violation.created_at.desc())
+        .all()
+    )
+
+    violation_summaries: List[CodeViolationSummary] = []
+    for violation in violations:
+        try:
+            deadline_date = violation.deadline_date if violation.deadline else None
+        except Exception:
+            deadline_date = None
+
+        violation_summaries.append(
+            CodeViolationSummary(
+                id=violation.id,
+                description=violation.description,
+                status=violation.status,
+                address_id=violation.address_id,
+                inspection_id=violation.inspection_id,
+                business_id=violation.business_id,
+                deadline=violation.deadline,
+                deadline_date=deadline_date,
+                combadd=violation.address.combadd if violation.address else None,
+                violation_type=violation.violation_type,
+                created_at=violation.created_at,
+                updated_at=violation.updated_at,
+            )
+        )
+
+    return CodeResponse.model_validate({
+        "id": code.id,
+        "chapter": code.chapter,
+        "section": code.section,
+        "name": code.name,
+        "description": code.description,
+        "created_at": code.created_at,
+        "updated_at": code.updated_at,
+        "violation_count": len(violation_summaries),
+        "violations": [summary.model_dump() for summary in violation_summaries],
+    })
 
 # Delete a code by ID
 @router.delete("/codes/{code_id}", status_code=204)

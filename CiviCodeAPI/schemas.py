@@ -323,7 +323,25 @@ class CodeBase(BaseModel):
 class CodeCreate(CodeBase):
     pass
 
-class CodeResponse(CodeBase):
+class CodeViolationSummary(BaseModel):
+    id: int
+    description: Optional[str] = None
+    status: Optional[int] = None
+    address_id: int
+    inspection_id: Optional[int] = None
+    business_id: Optional[int] = None
+    deadline: Optional[str] = None
+    deadline_date: Optional[datetime] = None
+    combadd: Optional[str] = None
+    violation_type: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class CodePublic(CodeBase):
     id: int
     name: str
     chapter: str
@@ -333,6 +351,11 @@ class CodeResponse(CodeBase):
 
     class Config:
         from_attributes = True
+
+
+class CodeResponse(CodePublic):
+    violation_count: int = 0
+    violations: Optional[List[CodeViolationSummary]] = None
 
 # Licenses
 class LicenseBase(BaseModel):
