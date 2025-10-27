@@ -6,7 +6,7 @@ from schemas import InspectionResponse, ContactResponse, AddressResponse, AreaRe
 from schemas import InspectionResponse, ContactResponse, AddressResponse, AreaResponse, AreaCreate, RoomResponse, RoomCreate, PromptCreate, PromptResponse, ObservationCreate, ObservationResponse, PotentialObservationResponse
 from database import get_db
 from models import Code
-from storage import blob_service_client, CONTAINER_NAME, account_name, account_key
+import storage
 from image_utils import normalize_image_for_web
 from datetime import datetime, timedelta, date
 from azure.storage.blob import generate_blob_sas, BlobSasPermissions
@@ -260,7 +260,7 @@ async def create_inspection(
             raw = await attachment.read()
             normalized_bytes, norm_filename, norm_ct = normalize_image_for_web(raw, attachment.filename, attachment.content_type)
             blob_key = f"inspections/{new_inspection.id}/{uuid.uuid4()}-{norm_filename}"
-            blob_client = blob_service_client.get_blob_client(container=CONTAINER_NAME, blob=blob_key)
+            blob_client = storage.blob_service_client.get_blob_client(container=storage.CONTAINER_NAME, blob=blob_key)
             blob_client.upload_blob(normalized_bytes, overwrite=True, content_type=norm_ct)
 
             blob_row = ActiveStorageBlob(
@@ -848,15 +848,15 @@ async def upload_photos_for_observation(
             raw = await file.read()
             normalized_bytes, norm_filename, norm_ct = normalize_image_for_web(raw, file.filename, file.content_type)
             blob_name = f"observations/{observation_id}/{uuid.uuid4()}-{norm_filename}"
-            blob_client = blob_service_client.get_blob_client(container=CONTAINER_NAME, blob=blob_name)
+            blob_client = storage.blob_service_client.get_blob_client(container=storage.CONTAINER_NAME, blob=blob_name)
             blob_client.upload_blob(normalized_bytes, overwrite=True, content_type=norm_ct)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to upload file {file.filename}: {str(e)}")
 
-        photo_url = f"https://{blob_service_client.account_name}.blob.core.windows.net/{CONTAINER_NAME}/{blob_name}"
+            photo_url = f"https://{storage.account_name}.blob.core.windows.net/{storage.CONTAINER_NAME}/{blob_name}"
 
-        db_photo = Photo(url=photo_url, observation_id=observation_id)
-        db.add(db_photo)
+            db_photo = Photo(url=photo_url, observation_id=observation_id)
+            db.add(db_photo)
 
     db.commit()
 
@@ -880,7 +880,7 @@ async def upload_photos_for_inspection(
             raw = await file.read()
             normalized_bytes, norm_filename, norm_ct = normalize_image_for_web(raw, file.filename, file.content_type)
             blob_key = f"inspections/{inspection_id}/{uuid.uuid4()}-{norm_filename}"
-            blob_client = blob_service_client.get_blob_client(container=CONTAINER_NAME, blob=blob_key)
+            blob_client = storage.blob_service_client.get_blob_client(container=storage.CONTAINER_NAME, blob=blob_key)
             blob_client.upload_blob(normalized_bytes, overwrite=True, content_type=norm_ct)
 
             blob_row = ActiveStorageBlob(
@@ -979,32 +979,38 @@ def get_inspection_photos(inspection_id: int, download: bool = False, db: Sessio
         try:
             # Ensure browser-safe; convert on-demand if needed
             blob = ensure_blob_browser_safe(db, blob)
+            # Ensure storage clients/account metadata are initialized before SAS generation
+            try:
+                storage.ensure_initialized()
+            except Exception:
+                # allow SAS generation to fail below; we'll catch and skip
+                pass
             sas_token = generate_blob_sas(
-                account_name=account_name,
-                container_name=CONTAINER_NAME,
+                account_name=storage.account_name,
+                container_name=storage.CONTAINER_NAME,
                 blob_name=blob.key,
-                account_key=account_key,
+                account_key=storage.account_key,
                 permission=BlobSasPermissions(read=True),
                 start=datetime.utcnow() - timedelta(minutes=5),
                 expiry=datetime.utcnow() + timedelta(hours=1),
                 content_disposition=(f'attachment; filename="{blob.filename}"' if download else None),
             )
-            url = f"https://{account_name}.blob.core.windows.net/{CONTAINER_NAME}/{blob.key}?{sas_token}"
+            url = f"https://{storage.account_name}.blob.core.windows.net/{storage.CONTAINER_NAME}/{blob.key}?{sas_token}"
             poster_url = None
             if (blob.content_type or "").startswith("video/") and blob.key.lower().endswith('.mp4'):
                 base = blob.key[:-4]
                 poster_key = f"{base}-poster.jpg"
                 try:
                     poster_sas = generate_blob_sas(
-                        account_name=account_name,
-                        container_name=CONTAINER_NAME,
+                        account_name=storage.account_name,
+                        container_name=storage.CONTAINER_NAME,
                         blob_name=poster_key,
-                        account_key=account_key,
+                        account_key=storage.account_key,
                         permission=BlobSasPermissions(read=True),
                         start=datetime.utcnow() - timedelta(minutes=5),
                         expiry=datetime.utcnow() + timedelta(hours=1),
                     )
-                    poster_url = f"https://{account_name}.blob.core.windows.net/{CONTAINER_NAME}/{poster_key}?{poster_sas}"
+                    poster_url = f"https://{storage.account_name}.blob.core.windows.net/{storage.CONTAINER_NAME}/{poster_key}?{poster_sas}"
                 except Exception:
                     poster_url = None
             results.append({
