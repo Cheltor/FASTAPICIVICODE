@@ -1,8 +1,9 @@
 from fastapi import APIRouter, HTTPException, Depends, Query
 from datetime import date
+import re
 from sqlalchemy.orm import Session, joinedload
 from typing import List
-from models import Business, Contact, BusinessContact
+from models import Business, Contact, BusinessContact, Inspection, License, Permit
 from sqlalchemy import or_, func
 from schemas import BusinessCreate, BusinessResponse, AddressResponse, ContactResponse
 from fastapi import Body
@@ -71,7 +72,18 @@ def search_businesses(
     q = db.query(Business).options(joinedload(Business.address))
     if query and query.strip():
         like = f"%{query}%"
-        q = q.filter(or_(Business.name.ilike(like), Business.trading_as.ilike(like)))
+        digits = re.sub(r"\D", "", query)
+        filters = [
+            Business.name.ilike(like),
+            Business.trading_as.ilike(like),
+            Business.email.ilike(like),
+            Business.website.ilike(like),
+        ]
+        if digits:
+            digits_like = f"%{digits}%"
+            filters.append(Business.phone.ilike(digits_like))
+        filters.append(Business.phone.ilike(like))
+        q = q.filter(or_(*filters))
     businesses = q.order_by(Business.name.asc()).limit(limit).all()
     return businesses
 
@@ -127,14 +139,48 @@ def get_businesses(skip: int = 0, db: Session = Depends(get_db)):
 @router.post("/businesses/", response_model=BusinessResponse)
 def create_business(business: BusinessCreate, db: Session = Depends(get_db)):
     name = (business.name or '').strip()
+    trading = (business.trading_as or '').strip()
+    email = (business.email or '').strip()
+    phone_digits = re.sub(r"\D", "", business.phone or '')
+
+    duplicates = (
+        db.query(Business)
+        .filter(Business.address_id == business.address_id)
+        .all()
+    )
+
+    name_lower = name.lower()
+    trading_lower = trading.lower()
+    email_lower = email.lower()
+
+    for existing in duplicates:
+        conflicts = []
+        existing_name = (existing.name or '').strip().lower()
+        existing_trading = (existing.trading_as or '').strip().lower()
+        existing_email = (existing.email or '').strip().lower()
+        existing_phone_digits = re.sub(r"\D", "", existing.phone or '')
+
+        if name_lower and existing_name and existing_name == name_lower:
+            conflicts.append('name')
+        if trading_lower and existing_trading and existing_trading == trading_lower:
+            conflicts.append('trading name')
+        if email_lower and existing_email and existing_email == email_lower:
+            conflicts.append('email')
+        if phone_digits and existing_phone_digits and existing_phone_digits == phone_digits:
+            conflicts.append('phone number')
+
+        if conflicts:
+            readable = ', '.join(conflicts)
+            raise HTTPException(status_code=409, detail=f'Duplicate business detected for this address (matching {readable}).')
+
     if name:
-        existing = (
+        existing_global = (
             db.query(Business)
-            .filter(func.lower(Business.name) == name.lower())
+            .filter(func.lower(Business.name) == name.lower(), Business.address_id != business.address_id)
             .first()
         )
-        if existing:
-            raise HTTPException(status_code=409, detail='Business name already exists')
+        if existing_global:
+            raise HTTPException(status_code=409, detail='Business name already exists at another address')
 
     new_business = Business(**business.dict())
     db.add(new_business)
@@ -202,6 +248,11 @@ def delete_business(business_id: int, db: Session = Depends(get_db)):
     if not business:
         raise HTTPException(status_code=404, detail="Business not found")
     try:
+        # Null out foreign keys on related records before deleting the business to avoid orphan references
+        db.query(Inspection).filter(Inspection.business_id == business_id).update({Inspection.business_id: None}, synchronize_session=False)
+        db.query(License).filter(License.business_id == business_id).update({License.business_id: None}, synchronize_session=False)
+        db.query(Permit).filter(Permit.business_id == business_id).update({Permit.business_id: None}, synchronize_session=False)
+        db.flush()
         db.delete(business)
         db.commit()
     except Exception:

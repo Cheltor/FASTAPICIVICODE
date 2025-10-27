@@ -1,9 +1,9 @@
-from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, Body
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, Body, Query
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from azure.storage.blob import generate_blob_sas, BlobSasPermissions
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import List, Optional, Union
 from models import Comment, ContactComment, ActiveStorageAttachment, ActiveStorageBlob, User, Unit, Contact, CommentContactLink, Mention
 from schemas import (
     CommentCreate,
@@ -13,6 +13,7 @@ from schemas import (
     ContactResponse,
     UserResponse,
     UnitResponse,
+    CommentPageResponse,
 )
 from database import get_db
 import storage
@@ -384,55 +385,38 @@ def create_comment(
     return _build_comment_response(db, new_comment)
 
 # Get all comments for a specific Address
-@router.get("/comments/address/{address_id}", response_model=List[CommentResponse])
-def get_comments_by_address(address_id: int, db: Session = Depends(get_db)):
-    comments = db.query(Comment).filter(Comment.address_id == address_id).order_by(Comment.created_at.desc()).all()
-    comment_responses = []
-    for comment in comments:
-        user = db.query(User).filter(User.id == comment.user_id).first()
-        if user is None:
-            raise HTTPException(status_code=404, detail="User not found")
-        unit = None
-        if comment.unit_id:
-            unit = db.query(Unit).filter(Unit.id == comment.unit_id).first()
-        try:
-            mentions_users = (
-                db.query(User)
-                .join(Mention, Mention.user_id == User.id)
-                .filter(Mention.comment_id == comment.id)
-                .all()
-            )
-        except Exception:
-            mentions_users = []
-        contact_mentions = _get_contact_mentions(db, comment.id)
-        comment_responses.append(CommentResponse(
-            id=comment.id,
-            content=comment.content,
-            user_id=comment.user_id,
-            address_id=comment.address_id,  # <-- Ensure address_id is included
-            user=UserResponse(
-                id=user.id,
-                name=user.name,
-                email=user.email,
-                phone=user.phone,
-                role=user.role,
-                created_at=user.created_at,
-                updated_at=user.updated_at
-            ),
-            unit_id=comment.unit_id,
-            unit=UnitResponse(
-                id=unit.id,
-                number=unit.number,
-                address_id=unit.address_id,
-                created_at=unit.created_at,
-                updated_at=unit.updated_at
-            ) if unit else None,
-            mentions=[UserResponse.from_orm(u) for u in mentions_users] if mentions_users else None,
-            contact_mentions=[ContactResponse.from_orm(c) for c in contact_mentions] if contact_mentions else None,
-            created_at=comment.created_at,
-            updated_at=comment.updated_at
-        ))
-    return comment_responses
+@router.get(
+    "/comments/address/{address_id}",
+    response_model=Union[CommentPageResponse, List[CommentResponse]],
+)
+def get_comments_by_address(
+    address_id: int,
+    page: Optional[int] = Query(None, ge=1),
+    page_size: int = Query(10, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    base_query = (
+        db.query(Comment)
+        .filter(Comment.address_id == address_id)
+        .order_by(Comment.created_at.desc())
+    )
+
+    if page is None:
+        comments = base_query.all()
+        return [_build_comment_response(db, comment) for comment in comments]
+
+    total = base_query.count()
+    offset = (page - 1) * page_size
+    comments = base_query.offset(offset).limit(page_size).all()
+    results = [_build_comment_response(db, comment) for comment in comments]
+    has_more = (offset + len(results)) < total
+    return CommentPageResponse(
+        results=results,
+        total=total,
+        page=page,
+        page_size=page_size,
+        has_more=has_more,
+    )
 
 # Get all comments for a specific Contact
 @router.get("/comments/contact/{contact_id}", response_model=List[ContactCommentResponse])

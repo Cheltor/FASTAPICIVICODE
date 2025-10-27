@@ -238,6 +238,14 @@ class CommentResponse(CommentBase):
     class Config:
         from_attributes = True  # This allows returning ORM models as dicts
 
+
+class CommentPageResponse(BaseModel):
+    results: List[CommentResponse]
+    total: int
+    page: int
+    page_size: int
+    has_more: bool
+
 # Pydantic schema for Citations
 class CitationBase(BaseModel):
     fine: Optional[float] = None
