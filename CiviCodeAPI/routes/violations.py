@@ -1,7 +1,17 @@
 from datetime import date, datetime, timedelta
-from fastapi import APIRouter, HTTPException, Depends, Body, UploadFile, File, Form
+from fastapi import (
+    APIRouter,
+    HTTPException,
+    Depends,
+    Body,
+    UploadFile,
+    File,
+    Form,
+    Response,
+    Query,
+)
 from sqlalchemy.orm import Session, joinedload
-from typing import List
+from typing import List, Optional
 from azure.storage.blob import generate_blob_sas, BlobSasPermissions
 from models import Violation, Citation, ActiveStorageAttachment, ActiveStorageBlob, User, Notification
 from email_service import send_notification_email
@@ -21,6 +31,13 @@ def _ensure_storage_init() -> None:
     """Ensure Azure storage clients are initialized so account metadata is populated."""
     storage.ensure_initialized()
 
+STATUS_STRING_TO_INT = {
+    "current": 0,
+    "resolved": 1,
+    "pending trial": 2,
+    "dismissed": 3,
+}
+
 # Extend deadline for a violation
 @router.patch("/violation/{violation_id}/deadline", response_model=schemas.ViolationResponse)
 def extend_violation_deadline(violation_id: int, extend: int = Body(..., embed=True), db: Session = Depends(get_db)):
@@ -34,18 +51,51 @@ def extend_violation_deadline(violation_id: int, extend: int = Body(..., embed=T
 
 # Get all violations
 @router.get("/violations/", response_model=List[schemas.ViolationResponse])
-def get_violations(skip: int = 0, db: Session = Depends(get_db)):
-    violations = (
-        db.query(Violation)
-        .options(
-            joinedload(Violation.address),
-            joinedload(Violation.codes),
-            joinedload(Violation.user)  # Eagerly load User relationship
-        )
-        .order_by(desc(Violation.created_at))
-        .offset(skip)
-        .all()
-    )
+def get_violations(
+    response: Response,
+    skip: int = 0,
+    limit: Optional[int] = Query(None, ge=0),
+    status: Optional[str] = Query(None),
+    assigned_user_id: Optional[int] = Query(None),
+    user_email: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+):
+    query = db.query(Violation)
+
+    if status:
+        status_key = status.strip().lower()
+        if status_key not in STATUS_STRING_TO_INT:
+            raise HTTPException(status_code=400, detail="Invalid status filter")
+        query = query.filter(Violation.status == STATUS_STRING_TO_INT[status_key])
+
+    if assigned_user_id is not None:
+        query = query.filter(Violation.user_id == assigned_user_id)
+    elif user_email:
+        query = query.join(Violation.user).filter(User.email == user_email)
+
+    total = query.count()
+
+    # Cap the limit to avoid unbounded responses if a very large number is supplied.
+    if limit is not None:
+        if limit == 0:
+            limit = None
+        else:
+            limit = min(limit, 200)
+
+    violations_query = query.options(
+        joinedload(Violation.address),
+        joinedload(Violation.codes),
+        joinedload(Violation.user),  # Eagerly load User relationship
+    ).order_by(desc(Violation.created_at))
+
+    if skip:
+        violations_query = violations_query.offset(skip)
+    if limit is not None:
+        violations_query = violations_query.limit(limit)
+
+    violations = violations_query.all()
+
+    response.headers["X-Total-Count"] = str(total)
 
     response = []
     for violation in violations:
