@@ -11,6 +11,7 @@ from settings_broadcast import broadcaster
 from typing import Optional
 from datetime import datetime
 from sqlalchemy.orm import joinedload
+import asyncio
 
 router = APIRouter()
 
@@ -49,8 +50,31 @@ def get_chat_setting(db: Session = Depends(get_db)):
 @router.get('/settings/stream')
 def settings_stream():
     async def event_generator():
-        async for item in broadcaster.subscribe():
-            yield f"data: {json.dumps(item)}\n\n"
+        """
+        SSE generator that yields broadcaster events and sends a heartbeat comment
+        at regular intervals so the connection is not considered idle by Heroku.
+        """
+        sub = broadcaster.subscribe()
+        HEARTBEAT_INTERVAL = 25  # seconds; must be < Heroku 55s idle timeout
+        try:
+            while True:
+                try:
+                    # Wait for next broadcast item, but timeout so we can heartbeat
+                    item = await asyncio.wait_for(sub.__anext__(), timeout=HEARTBEAT_INTERVAL)
+                    yield f"data: {json.dumps(item)}\n\n"
+                except asyncio.TimeoutError:
+                    # SSE comment is ignored by clients but keeps the connection active
+                    yield ": keep-alive\n\n"
+                except StopAsyncIteration:
+                    break
+        finally:
+            # close subscription if publisher supports aclose()
+            close = getattr(sub, "aclose", None)
+            if callable(close):
+                try:
+                    await close()
+                except Exception:
+                    pass
 
     return StreamingResponse(event_generator(), media_type='text/event-stream')
 
