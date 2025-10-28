@@ -12,6 +12,7 @@ from typing import Optional
 from datetime import datetime
 from sqlalchemy.orm import joinedload
 import asyncio
+from contextlib import suppress
 
 router = APIRouter()
 
@@ -56,18 +57,34 @@ def settings_stream():
         """
         sub = broadcaster.subscribe()
         HEARTBEAT_INTERVAL = 25  # seconds; must be < Heroku 55s idle timeout
+        event_task = asyncio.create_task(sub.__anext__())
+        heartbeat_task = asyncio.create_task(asyncio.sleep(HEARTBEAT_INTERVAL))
         try:
             while True:
-                try:
-                    # Wait for next broadcast item, but timeout so we can heartbeat
-                    item = await asyncio.wait_for(sub.__anext__(), timeout=HEARTBEAT_INTERVAL)
+                done, _ = await asyncio.wait(
+                    {event_task, heartbeat_task},
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+
+                if event_task in done:
+                    try:
+                        item = event_task.result()
+                    except StopAsyncIteration:
+                        return
                     yield f"data: {json.dumps(item)}\n\n"
-                except asyncio.TimeoutError:
+                    event_task = asyncio.create_task(sub.__anext__())
+
+                if heartbeat_task in done:
                     # SSE comment is ignored by clients but keeps the connection active
                     yield ": keep-alive\n\n"
-                except StopAsyncIteration:
-                    break
+                    heartbeat_task = asyncio.create_task(asyncio.sleep(HEARTBEAT_INTERVAL))
         finally:
+            for task in (event_task, heartbeat_task):
+                task.cancel()
+            with suppress(asyncio.CancelledError, StopAsyncIteration):
+                await event_task
+            with suppress(asyncio.CancelledError):
+                await heartbeat_task
             # close subscription if publisher supports aclose()
             close = getattr(sub, "aclose", None)
             if callable(close):
