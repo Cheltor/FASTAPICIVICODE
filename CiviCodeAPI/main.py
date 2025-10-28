@@ -94,6 +94,8 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # Expose X-Total-Count so the browser can read the total results header for pagination
+    expose_headers=["X-Total-Count"],
 )
 
 # Root endpoint for testing
