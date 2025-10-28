@@ -835,14 +835,17 @@ def update_observation(observation_id: int, payload: ObservationUpdate, db: Sess
 # Upload photos for an observation
 @router.post("/observations/{observation_id}/photos", status_code=status.HTTP_201_CREATED)
 async def upload_photos_for_observation(
-    observation_id: int, 
-    files: List[UploadFile] = File(...), 
+    observation_id: int,
+    files: List[UploadFile] = File(...),
     db: Session = Depends(get_db)
 ):
+    """
+    Upload one or more image files for an observation and persist a Photo row per file.
+    """
     observation = db.query(Observation).filter(Observation.id == observation_id).first()
     if not observation:
         raise HTTPException(status_code=404, detail="Observation not found")
-    
+
     for file in files:
         try:
             raw = await file.read()
@@ -850,16 +853,16 @@ async def upload_photos_for_observation(
             blob_name = f"observations/{observation_id}/{uuid.uuid4()}-{norm_filename}"
             blob_client = storage.blob_service_client.get_blob_client(container=storage.CONTAINER_NAME, blob=blob_name)
             blob_client.upload_blob(normalized_bytes, overwrite=True, content_type=norm_ct)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to upload file {file.filename}: {str(e)}")
 
+            # Persist photo record referencing the uploaded blob
             photo_url = f"https://{storage.account_name}.blob.core.windows.net/{storage.CONTAINER_NAME}/{blob_name}"
-
             db_photo = Photo(url=photo_url, observation_id=observation_id)
             db.add(db_photo)
+        except Exception as e:
+            db.rollback()
+            raise HTTPException(status_code=500, detail=f"Failed to upload file {file.filename}: {str(e)}")
 
     db.commit()
-
     return {"detail": "Photos uploaded successfully"}
 
     
