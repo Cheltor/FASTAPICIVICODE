@@ -422,6 +422,16 @@ class PermitResponse(PermitBase):
         from_attributes = True
 
 
+class PermitUpdate(BaseModel):
+    permit_type: Optional[str] = None
+    business_id: Optional[int] = None
+    permit_number: Optional[str] = None
+    date_issued: Optional[date] = None
+    expiration_date: Optional[date] = None
+    conditions: Optional[str] = None
+    paid: Optional[bool] = None
+
+
 class RecentActivityResponse(BaseModel):
     comments: List[CommentResponse]
     inspections: List[InspectionResponse]

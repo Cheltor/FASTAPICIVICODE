@@ -4,7 +4,7 @@ from sqlalchemy import func
 from typing import List, Optional
 from database import get_db
 from models import Permit, Inspection, Address, Business
-from schemas import PermitCreate, PermitResponse
+from schemas import PermitCreate, PermitResponse, PermitUpdate
 
 router = APIRouter()
 
@@ -59,6 +59,45 @@ def get_permit(permit_id: int, db: Session = Depends(get_db)):
         if addr:
             combadd = addr.combadd
             address_id = addr.id
+    data = {k: getattr(permit, k) for k in permit.__dict__ if not k.startswith('_')}
+    data['combadd'] = combadd
+    data['address_id'] = address_id
+    return data
+
+
+@router.put("/permits/{permit_id}", response_model=PermitResponse)
+def update_permit(permit_id: int, permit_in: PermitUpdate, db: Session = Depends(get_db)):
+    permit = db.query(Permit).filter(Permit.id == permit_id).first()
+    if not permit:
+        raise HTTPException(status_code=404, detail="Permit not found")
+
+    # Update only provided fields
+    for field in ("permit_type", "business_id", "permit_number", "date_issued", "expiration_date", "conditions", "paid"):
+        val = getattr(permit_in, field)
+        # Normalize empty strings to None so frontend can send empty values from inputs
+        if isinstance(val, str) and val.strip() == "":
+            val = None
+        if val is not None:
+            setattr(permit, field, val)
+
+    try:
+        db.add(permit)
+        db.commit()
+        db.refresh(permit)
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Failed to update permit")
+
+    # Attach address context like in get_permit
+    insp = db.query(Inspection).filter(Inspection.id == permit.inspection_id).first()
+    combadd = None
+    address_id = None
+    if insp:
+        addr = db.query(Address).filter(Address.id == insp.address_id).first()
+        if addr:
+            combadd = addr.combadd
+            address_id = addr.id
+
     data = {k: getattr(permit, k) for k in permit.__dict__ if not k.startswith('_')}
     data['combadd'] = combadd
     data['address_id'] = address_id
