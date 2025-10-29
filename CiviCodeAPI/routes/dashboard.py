@@ -387,6 +387,11 @@ def get_oas_dashboard_overview(db: Session = Depends(get_db)):
         .all()
     )
 
+    # Compute the total count of active violations (unlimited) so the UI can show the full number
+    active_violations_count = (
+        db.query(func.count(Violation.id)).filter(Violation.status == 0).scalar() or 0
+    )
+
     active_violations: List[ViolationResponse] = []
     for violation in violation_records:
         violation_model = ViolationResponse.from_orm(violation)
@@ -412,6 +417,13 @@ def get_oas_dashboard_overview(db: Session = Depends(get_db)):
         .filter(or_(License.sent.is_(False), License.sent.is_(None)))
         .limit(PAGE_LIMIT)
         .all()
+    )
+
+    # Compute total number of licenses that need action (either unpaid or not sent)
+    licenses_needing_action_count = (
+        db.query(func.count(License.id)).filter(
+            or_(License.paid.is_(False), License.paid.is_(None), License.sent.is_(False), License.sent.is_(None))
+        ).scalar() or 0
     )
 
     def to_license_response(records: List[License]) -> List[LicenseResponse]:
@@ -443,6 +455,8 @@ def get_oas_dashboard_overview(db: Session = Depends(get_db)):
     return OasDashboardResponse(
         pending_complaints=pending_complaints,
         active_violations=active_violations,
+        active_violations_count=active_violations_count,
+        licenses_needing_action_count=licenses_needing_action_count,
         licenses_not_paid=to_license_response(licenses_needing_payment),
         licenses_not_sent=to_license_response(licenses_needing_sending),
     )

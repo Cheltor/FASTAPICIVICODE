@@ -434,6 +434,8 @@ class RecentActivityResponse(BaseModel):
 class OasDashboardResponse(BaseModel):
     pending_complaints: List[InspectionResponse]
     active_violations: List[ViolationResponse]
+    active_violations_count: int = 0
+    licenses_needing_action_count: int = 0
     licenses_not_paid: List[LicenseResponse]
     licenses_not_sent: List[LicenseResponse]
 
