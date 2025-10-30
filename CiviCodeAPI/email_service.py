@@ -77,7 +77,7 @@ def build_password_reset_html(reset_url: Optional[str]) -> str:
         """
     return f"""
         <div style="font-family: Arial, sans-serif; color: #111;">
-            <h2 style="margin:0 0 12px;">Reset your CiviCode password</h2>
+            <h2 style="margin:0 0 12px;">Reset your CodeSoft password</h2>
             <p style="margin:0 0 16px;">We received a request to reset your password. If you made this request, use the link below to choose a new password.</p>
             {link_html}
             <p style="margin:16px 0 0;font-size:14px;color:#555;">If you did not request a password reset, you can safely ignore this email.</p>
@@ -101,7 +101,7 @@ def send_password_reset_email(to_email: str, reset_url: Optional[str]) -> bool:
         message = Mail(
             from_email=SENDGRID_FROM_EMAIL,
             to_emails=to_email,
-            subject="Reset your CiviCode password",
+            subject="Reset your CodeSoft password",
             html_content=build_password_reset_html(reset_url),
         )
         sg = SendGridAPIClient(SENDGRID_API_KEY)
