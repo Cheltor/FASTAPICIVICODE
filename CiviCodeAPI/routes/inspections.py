@@ -18,13 +18,30 @@ from azure.storage.blob import generate_blob_sas, BlobSasPermissions
 import uuid
 from media_service import ensure_blob_browser_safe
 from email_service import send_notification_email
+from .auth import get_current_user
 
 router = APIRouter()
 
 # Internal helper to create a notification when assigning/reassigning
-def _create_assignment_notification(db: Session, inspection: Inspection, inspector_id: Optional[int]):
+def _create_assignment_notification(
+    db: Session,
+    inspection: Inspection,
+    inspector_id: Optional[int],
+    actor_user_id: Optional[int] = None,
+):
     if not inspector_id:
         return
+    try:
+        inspector_int = int(inspector_id)
+    except (TypeError, ValueError):
+        return
+    if actor_user_id is not None:
+        try:
+            actor_int = int(actor_user_id)
+        except (TypeError, ValueError):
+            actor_int = None
+        if actor_int == inspector_int:
+            return
     try:
         title = "Inspection assigned"
         body = f"You have been assigned to inspection #{inspection.id}."
@@ -32,7 +49,7 @@ def _create_assignment_notification(db: Session, inspection: Inspection, inspect
             title=title,
             body=body,
             inspection_id=inspection.id,
-            user_id=int(inspector_id),
+            user_id=inspector_int,
             read=False,
         )
         db.add(notif)
@@ -41,7 +58,7 @@ def _create_assignment_notification(db: Session, inspection: Inspection, inspect
         try:
             import os
             override_id = os.getenv("TEST_EMAIL_USER_ID")
-            target_user_id = int(override_id) if override_id else int(inspector_id)
+            target_user_id = int(override_id) if override_id else inspector_int
             target_user = db.query(User).filter(User.id == target_user_id).first()
             if target_user and target_user.email:
                 send_notification_email(subject=title, body=body, to_email=target_user.email, inspection_id=inspection.id)
@@ -244,7 +261,8 @@ async def create_inspection(
     paid: bool = Form(False),
     inspector_id: Optional[int] = Form(None),
     business_id: Optional[int] = Form(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     new_inspection = Inspection(
         address_id=address_id,
@@ -297,7 +315,8 @@ async def create_inspection(
     db.commit()
 
     # Notifications
-    _create_assignment_notification(db, new_inspection, inspector_id)
+    actor_id = getattr(current_user, "id", None)
+    _create_assignment_notification(db, new_inspection, inspector_id, actor_user_id=actor_id)
     _notify_admins_unassigned_complaint(db, new_inspection)
 
     return new_inspection
