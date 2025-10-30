@@ -107,6 +107,7 @@ def _handle_user_mentions(
     content: Optional[str],
     raw_ids,
     context_label: str,
+    inspection_id: Optional[int] = None,
 ) -> None:
     try:
         from models import Notification
@@ -129,6 +130,7 @@ def _handle_user_mentions(
                     title="You were mentioned",
                     body=f"You were mentioned in a {context_label}: {snippet}",
                     comment_id=comment_id,
+                    inspection_id=inspection_id,
                     user_id=int(uid),
                     read=False,
                 )
@@ -145,7 +147,7 @@ def _handle_user_mentions(
             try:
                 user = db.query(User).filter(User.id == int(uid)).first()
                 if user and user.email:
-                    send_notification_email(subject="You were mentioned", body=content or '', to_email=user.email, inspection_id=None)
+                    send_notification_email(subject="You were mentioned", body=snippet, to_email=user.email, inspection_id=inspection_id)
             except Exception:
                 pass
     except Exception:

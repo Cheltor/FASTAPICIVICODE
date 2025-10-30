@@ -1,10 +1,15 @@
 from fastapi import APIRouter, HTTPException, Depends, status, UploadFile, File, Form
 from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional
-from models import Inspection, Contact, Address, Area, Room, Prompt, Observation, Photo, ActiveStorageAttachment, ActiveStorageBlob, License, Permit, Violation, User, Notification
+from models import Inspection, Contact, Address, Area, Room, Prompt, Observation, Photo, ActiveStorageAttachment, ActiveStorageBlob, License, Permit, Violation, User, Notification, InspectionComment
 from schemas import InspectionResponse, ContactResponse, AddressResponse, AreaResponse, AreaCreate, RoomResponse, RoomCreate, PromptCreate, PromptResponse, ObservationCreate, ObservationResponse, ObservationUpdate
 from schemas import InspectionResponse, ContactResponse, AddressResponse, AreaResponse, AreaCreate, RoomResponse, RoomCreate, PromptCreate, PromptResponse, ObservationCreate, ObservationResponse, PotentialObservationResponse
+# add import for inspection comment schemas
+from schemas import InspectionCommentCreate, InspectionCommentResponse
 from database import get_db
+# reuse mention helpers from the generic comments routes
+from routes.comments import _handle_user_mentions, _store_contact_mentions, _collect_contact_ids, _get_contact_mentions
+from schemas import UserResponse
 from models import Code
 import storage
 from image_utils import normalize_image_for_web
@@ -1026,5 +1031,165 @@ def get_inspection_photos(inspection_id: int, download: bool = False, db: Sessio
             continue
 
     return results
+
+# --- Inspection comments endpoints ---
+@router.get("/inspections/{inspection_id}/comments", response_model=List[InspectionCommentResponse])
+def get_inspection_comments(inspection_id: int, db: Session = Depends(get_db)):
+    inspection = db.query(Inspection).filter(Inspection.id == inspection_id).first()
+    if not inspection:
+        raise HTTPException(status_code=404, detail="Inspection not found")
+    comments = (
+        db.query(InspectionComment)
+        .filter(InspectionComment.inspection_id == inspection_id)
+        .order_by(InspectionComment.created_at.desc())
+        .all()
+    )
+
+    if not comments:
+        return []
+
+    # Batch related lookups to include mentions and contact mentions in the response
+    comment_ids = {int(c.id) for c in comments}
+    user_ids = {int(c.user_id) for c in comments if c.user_id is not None}
+
+    users_by_id = {}
+    if user_ids:
+        for u in db.query(User).filter(User.id.in_(list(user_ids))).all():
+            users_by_id[int(u.id)] = u
+
+    # Fetch user mentions per comment
+    mentions_by_comment: dict[int, list[User]] = {cid: [] for cid in comment_ids}
+    try:
+        if comment_ids:
+            from models import Mention
+
+            rows = (
+                db.query(User, Mention)
+                .join(Mention, Mention.user_id == User.id)
+                .filter(Mention.comment_id.in_(list(comment_ids)))
+                .all()
+            )
+            for u, m in rows:
+                mentions_by_comment[int(m.comment_id)].append(u)
+    except Exception:
+        pass
+
+    # Fetch contact mentions per comment
+    contact_mentions_by_comment: dict[int, list[Contact]] = {cid: [] for cid in comment_ids}
+    try:
+        if comment_ids:
+            from models import CommentContactLink, Contact
+
+            contact_rows = (
+                db.query(Contact, CommentContactLink)
+                .join(CommentContactLink, CommentContactLink.contact_id == Contact.id)
+                .filter(CommentContactLink.comment_id.in_(list(comment_ids)))
+                .all()
+            )
+            for contact, link in contact_rows:
+                contact_mentions_by_comment[int(link.comment_id)].append(contact)
+    except Exception:
+        pass
+
+    results = []
+    for c in comments:
+        user = users_by_id.get(int(c.user_id)) if c.user_id is not None else None
+        user_mentions = mentions_by_comment.get(int(c.id), [])
+        contact_mentions = contact_mentions_by_comment.get(int(c.id), [])
+        results.append(
+            InspectionCommentResponse(
+                id=c.id,
+                inspection_id=c.inspection_id,
+                content=c.content,
+                user_id=c.user_id,
+                user=UserResponse.from_orm(user) if user else None,
+                mentions=[UserResponse.from_orm(u) for u in user_mentions] if user_mentions else None,
+                contact_mentions=[ContactResponse.from_orm(ct) for ct in contact_mentions] if contact_mentions else None,
+                created_at=c.created_at,
+                updated_at=c.updated_at,
+            )
+        )
+
+    return results
+
+@router.post("/inspections/{inspection_id}/comments", response_model=InspectionCommentResponse, status_code=status.HTTP_201_CREATED)
+def create_inspection_comment(
+    inspection_id: int,
+    content: str = Form(...),
+    user_id: int = Form(...),
+    mentioned_user_ids: Optional[str] = Form(None),
+    mentioned_contact_ids: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+):
+    inspection = db.query(Inspection).filter(Inspection.id == inspection_id).first()
+    if not inspection:
+        raise HTTPException(status_code=404, detail="Inspection not found")
+    # Validate user exists (best-effort)
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    comment = InspectionComment(
+        user_id=user_id,
+        inspection_id=inspection_id,
+        content=content,
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+    db.add(comment)
+    db.commit()
+    db.refresh(comment)
+
+    # Handle mentions in the comment (users and contacts) using shared helpers
+    try:
+        # create notifications and Mention rows for @-mentions (usernames or explicit ids)
+        # Use any explicit ids sent from the client first; otherwise fallback to parsing tokens in content
+        _handle_user_mentions(
+            db=db,
+            comment_id=comment.id,
+            actor_id=comment.user_id,
+            content=comment.content,
+            raw_ids=mentioned_user_ids,
+            context_label="inspection comment",
+        )
+
+        # collect contact ids from explicit form value or parse %tokens in content
+        contact_ids = _collect_contact_ids(db, mentioned_contact_ids, comment.content)
+        if contact_ids:
+            _store_contact_mentions(db, comment.id, comment.user_id, contact_ids)
+    except Exception:
+        # Mention handling should not block primary flow
+        pass
+
+    # Build response including mention lists so clients can render badges without extra fetches
+    try:
+        user = db.query(User).filter(User.id == comment.user_id).first() if comment.user_id else None
+        try:
+            from models import Mention
+
+            user_mentions = (
+                db.query(User)
+                .join(Mention, Mention.user_id == User.id)
+                .filter(Mention.comment_id == comment.id)
+                .all()
+            )
+        except Exception:
+            user_mentions = []
+        contact_mentions = _get_contact_mentions(db, comment.id)
+        response = InspectionCommentResponse(
+            id=comment.id,
+            inspection_id=comment.inspection_id,
+            content=comment.content,
+            user_id=comment.user_id,
+            user=UserResponse.from_orm(user) if user else None,
+            mentions=[UserResponse.from_orm(u) for u in user_mentions] if user_mentions else None,
+            contact_mentions=[ContactResponse.from_orm(c) for c in contact_mentions] if contact_mentions else None,
+            created_at=comment.created_at,
+            updated_at=comment.updated_at,
+        )
+        return response
+    except Exception:
+        # Fallback: return raw ORM object if building the response fails
+        return comment
 
 

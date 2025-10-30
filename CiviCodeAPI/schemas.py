@@ -313,6 +313,28 @@ class InspectionResponse(BaseModel):
     class Config:
         from_attributes = True
 
+# --- Inspection comment schemas ---
+class InspectionCommentBase(BaseModel):
+    content: str
+    user_id: int
+
+
+class InspectionCommentCreate(InspectionCommentBase):
+    pass
+
+
+class InspectionCommentResponse(InspectionCommentBase):
+    id: int
+    inspection_id: int
+    user: Optional[UserResponse] = None
+    mentions: Optional[List[UserResponse]] = None
+    contact_mentions: Optional[List[ContactResponse]] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
 # Pydantic schema for Codes
 class CodeBase(BaseModel):
     chapter: str

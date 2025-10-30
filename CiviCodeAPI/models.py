@@ -370,6 +370,9 @@ class InspectionComment(Base):
     created_at = Column(DateTime, default=func.now(), nullable=False)  # Auto-generate created_at timestamp
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)  # Auto-update updated_at timestamp
 
+    # Relationships
+    user = relationship("User", back_populates="inspection_comments")  # link to user who made comment
+    inspection = relationship("Inspection", back_populates="inspection_comments")  # link to inspection
 
 # Inspections
 class Inspection(Base):
@@ -420,6 +423,7 @@ class Inspection(Base):
     areas = relationship("Area", back_populates="inspection", cascade="all, delete-orphan")  # Inspection has many Areas
     licenses = relationship("License", back_populates="inspection")
     permits = relationship("Permit", back_populates="inspection")
+    inspection_comments = relationship("InspectionComment", back_populates="inspection", cascade="all, delete-orphan")  # comments on inspection
 
 # Licenses
 class License(Base):
@@ -606,6 +610,7 @@ class User(Base):
     inspections = relationship("Inspection", back_populates="inspector")  # Define relationship to Inspections
     comments = relationship("Comment", back_populates="user")  # Define relationship to Comments
     observations = relationship("Observation", back_populates="user")  # Define relationship to Observations
+    inspection_comments = relationship("InspectionComment", back_populates="user")  # comments made by user on inspections
 
 # Versions
 class Version(Base):
