@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Response, Depends
 from sqlalchemy.orm import Session, joinedload
 from database import get_db
-from models import Violation
+from models import Violation, License, Inspection, Business
 from docxtpl import DocxTemplate
 from io import BytesIO
 import os
@@ -128,4 +128,82 @@ def generate_compliance_letter(violation_id: int, db: Session = Depends(get_db))
         content=file_stream.read(),
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers=headers
+    )
+
+
+@router.get("/license/{license_id}/download")
+def generate_license_document(license_id: int, db: Session = Depends(get_db)):
+    lic = (
+        db.query(License)
+        .filter(License.id == license_id)
+        .options(joinedload(License.inspection).joinedload(Inspection.address))
+        .first()
+    )
+    if not lic:
+        raise HTTPException(status_code=404, detail="License not found")
+
+    inspection = lic.inspection
+    address = inspection.address if inspection else None
+
+    business = None
+    if getattr(lic, 'business_id', None):
+        try:
+            business = db.query(Business).filter(Business.id == lic.business_id).first()
+        except Exception:
+            business = None
+
+    # Map license types to template files
+    template_map = {
+        1: "FY26 Business License Template.docx",
+        2: "FY26 Conditional SFR License .docx",
+        3: "FY26 Multi Family License Template.docx",
+    }
+    tpl_filename = template_map.get(lic.license_type, "FY26 Business License Template.docx")
+
+    # Build context - include common fields expected by templates
+    context = {
+        "today": date.today().strftime("%m/%d/%Y"),
+        "license_number": lic.license_number or "",
+        "date_issued": lic.date_issued.strftime("%m/%d/%Y") if lic.date_issued else "",
+        "expiration_date": lic.expiration_date.strftime("%m/%d/%Y") if lic.expiration_date else "",
+        "fiscal_year": lic.fiscal_year or "",
+        "conditions": lic.conditions or "",
+        # inspection/address fields
+        "combadd": address.combadd if address and getattr(address, 'combadd', None) else "",
+        "premisezip": address.premisezip if address and getattr(address, 'premisezip', None) else "",
+        "ownername": address.ownername if address and getattr(address, 'ownername', None) else "",
+        "owneraddress": address.owneraddress if address and getattr(address, 'owneraddress', None) else "",
+        "ownercity": address.ownercity if address and getattr(address, 'ownercity', None) else "",
+        "ownerstate": address.ownerstate if address and getattr(address, 'ownerstate', None) else "",
+        "ownerzip": address.ownerzip if address and getattr(address, 'ownerzip', None) else "",
+        # business fields
+        "business_name": business.name if business and getattr(business, 'name', None) else "",
+        "business_address": getattr(business, 'address', '') if business else "",
+    }
+
+    template_path = os.path.join(os.path.dirname(__file__), "../templates", tpl_filename)
+    if not os.path.exists(template_path):
+        raise HTTPException(status_code=500, detail=f"Template not found: {tpl_filename}")
+
+    doc = DocxTemplate(template_path)
+    doc.render(context)
+
+    file_stream = BytesIO()
+    doc.save(file_stream)
+    file_stream.seek(0)
+
+    # Build a safe filename for download
+    def _sanitize(s):
+        return ''.join([c if c.isalnum() else '_' for c in (s or '')]).strip('_') or f'license_{license_id}'
+
+    primary_label = business.name if business and business.name else (address.combadd if address and getattr(address, 'combadd', None) else f'license_{license_id}')
+    safe = _sanitize(primary_label)
+
+    headers = {
+        'Content-Disposition': f'attachment; filename="{safe}_license_{license_id}.docx"'
+    }
+    return Response(
+        content=file_stream.read(),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers=headers,
     )
