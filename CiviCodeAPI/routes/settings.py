@@ -6,6 +6,7 @@ from models import AppSetting, User, AppSettingAudit, ChatLog
 import jwt
 from fastapi.security import OAuth2PasswordBearer
 from fastapi.responses import StreamingResponse
+import logging
 import json
 from settings_broadcast import broadcaster
 from typing import Optional
@@ -78,6 +79,9 @@ def settings_stream():
                     # SSE comment is ignored by clients but keeps the connection active
                     yield ": keep-alive\n\n"
                     heartbeat_task = asyncio.create_task(asyncio.sleep(HEARTBEAT_INTERVAL))
+        except Exception:
+            logging.exception("Exception in settings_stream event_generator")
+            raise
         finally:
             for task in (event_task, heartbeat_task):
                 task.cancel()

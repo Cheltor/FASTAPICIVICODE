@@ -18,7 +18,7 @@ from azure.storage.blob import generate_blob_sas, BlobSasPermissions
 import uuid
 from media_service import ensure_blob_browser_safe
 from email_service import send_notification_email
-from .auth import get_current_user
+from .auth import get_current_user, get_current_user_optional
 
 router = APIRouter()
 
@@ -262,7 +262,7 @@ async def create_inspection(
     inspector_id: Optional[int] = Form(None),
     business_id: Optional[int] = Form(None),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     new_inspection = Inspection(
         address_id=address_id,
