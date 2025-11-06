@@ -1,9 +1,11 @@
 import os
 from pathlib import Path
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+
 from dotenv import load_dotenv
-from models import Base
+from sqlalchemy import create_engine, event
+from sqlalchemy.orm import Session, sessionmaker, with_loader_criteria
+
+from CiviCodeAPI.models import Base, SoftDeleteMixin
 
 def _load_env() -> None:
     """Load environment for local development.
@@ -48,6 +50,43 @@ engine = create_engine(_database_url())
 
 # Create a configured "Session" class
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+@event.listens_for(Session, "before_flush")
+def _apply_soft_delete(session, flush_context, instances):
+    """Convert ORM deletes into soft deletes."""
+
+    for instance in list(session.deleted):
+        if isinstance(instance, SoftDeleteMixin):
+            session.deleted.discard(instance)
+            instance.mark_deleted()
+            session.add(instance)
+
+
+def _soft_delete_models():
+    return [
+        mapper.class_
+        for mapper in Base.registry.mappers
+        if issubclass(mapper.class_, SoftDeleteMixin)
+    ]
+
+
+@event.listens_for(Session, "do_orm_execute")
+def _filter_soft_deleted(execute_state):
+    if not execute_state.is_select:
+        return
+
+    if execute_state.execution_options.get("include_deleted"):
+        return
+
+    for model in _soft_delete_models():
+        execute_state.statement = execute_state.statement.options(
+            with_loader_criteria(
+                model,
+                lambda cls: cls.deleted_at.is_(None),
+                include_aliases=True,
+            )
+        )
 
 
 # Dependency for getting the database session

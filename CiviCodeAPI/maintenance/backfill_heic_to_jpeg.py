@@ -10,7 +10,7 @@ from azure.storage.blob import BlobClient
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))  # add FastAPI/CiviCodeAPI to path
 from storage import blob_service_client, CONTAINER_NAME  # type: ignore
 from database import SessionLocal  # type: ignore
-from models import ActiveStorageBlob  # type: ignore
+from CiviCodeAPI.models import ActiveStorageBlob  # type: ignore
 from image_utils import normalize_image_for_web  # type: ignore
 
 

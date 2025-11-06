@@ -4,8 +4,8 @@ from sqlalchemy import func
 from typing import Optional, Dict
 from datetime import datetime, timedelta, date
 
-from database import get_db
-from models import Inspection, Violation, Citation
+from CiviCodeAPI.database import get_db
+from CiviCodeAPI.models import Inspection, Violation, Citation
 
 router = APIRouter()
 

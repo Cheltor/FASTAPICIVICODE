@@ -1,7 +1,7 @@
 from pydantic import BaseModel, validator, Field
 from typing import Optional, List
 from datetime import datetime, date
-from constants import DEADLINE_OPTIONS, DEADLINE_VALUES
+from CiviCodeAPI.constants import DEADLINE_OPTIONS, DEADLINE_VALUES
 
 # Ensure CodeResponse is defined before ViolationResponse
 from typing import TYPE_CHECKING

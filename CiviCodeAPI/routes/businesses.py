@@ -3,11 +3,11 @@ from datetime import date
 import re
 from sqlalchemy.orm import Session, joinedload
 from typing import List
-from models import Business, Contact, BusinessContact, Inspection, License, Permit
+from CiviCodeAPI.models import Business, Contact, BusinessContact, Inspection, License, Permit
 from sqlalchemy import or_, func
-from schemas import BusinessCreate, BusinessResponse, AddressResponse, ContactResponse
+from CiviCodeAPI.schemas import BusinessCreate, BusinessResponse, AddressResponse, ContactResponse
 from fastapi import Body
-from database import get_db
+from CiviCodeAPI.database import get_db
 
 router = APIRouter()
 

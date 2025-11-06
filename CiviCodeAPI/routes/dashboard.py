@@ -2,7 +2,7 @@
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, or_
 from typing import List, Dict
-from models import (
+from CiviCodeAPI.models import (
     Violation,
     Inspection,
     Citation,
@@ -15,7 +15,7 @@ from models import (
     Permit,
     User,
 )
-from schemas import (
+from CiviCodeAPI.schemas import (
     ViolationCreate,
     ViolationResponse,
     InspectionCreate,
@@ -29,8 +29,8 @@ from schemas import (
     RecentActivityResponse,
     OasDashboardResponse,
 )
-from database import get_db
-from utils import get_this_workweek, get_last_workweek
+from CiviCodeAPI.database import get_db
+from CiviCodeAPI.utils import get_this_workweek, get_last_workweek
 
 router = APIRouter()
 

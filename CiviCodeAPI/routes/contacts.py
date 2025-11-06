@@ -2,9 +2,9 @@
 from fastapi import APIRouter, HTTPException, Depends, Query, Body
 from sqlalchemy.orm import Session, selectinload
 from typing import List
-from models import Contact, Inspection, Business
-from schemas import ContactCreate, ContactResponse, ContactDetailResponse, InspectionSummary, PermitSummary
-from database import get_db
+from CiviCodeAPI.models import Contact, Inspection, Business
+from CiviCodeAPI.schemas import ContactCreate, ContactResponse, ContactDetailResponse, InspectionSummary, PermitSummary
+from CiviCodeAPI.database import get_db
 from sqlalchemy import or_, func
 
 router = APIRouter()

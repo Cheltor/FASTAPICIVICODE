@@ -4,8 +4,8 @@ from sqlalchemy.orm import Session
 from azure.storage.blob import generate_blob_sas, BlobSasPermissions
 from datetime import datetime, timedelta
 from typing import List, Optional, Union
-from models import Comment, ContactComment, ActiveStorageAttachment, ActiveStorageBlob, User, Unit, Contact, CommentContactLink, Mention
-from schemas import (
+from CiviCodeAPI.models import Comment, ContactComment, ActiveStorageAttachment, ActiveStorageBlob, User, Unit, Contact, CommentContactLink, Mention
+from CiviCodeAPI.schemas import (
     CommentCreate,
     CommentResponse,
     ContactCommentCreate,
@@ -15,16 +15,16 @@ from schemas import (
     UnitResponse,
     CommentPageResponse,
 )
-from database import get_db
-import storage
-from image_utils import normalize_image_for_web
-from media_service import ensure_blob_browser_safe
+from CiviCodeAPI.database import get_db
+from CiviCodeAPI import storage
+from CiviCodeAPI.image_utils import normalize_image_for_web
+from CiviCodeAPI.media_service import ensure_blob_browser_safe
 import os
 import logging
 import uuid
 import jwt
 import re
-from email_service import send_notification_email
+from CiviCodeAPI.email_service import send_notification_email
 
 USER_MENTION_RE = re.compile(r"@([A-Za-z0-9@._\- ]+)")
 CONTACT_MENTION_RE = re.compile(r"%([A-Za-z0-9@._\- ]+)")
@@ -110,7 +110,7 @@ def _handle_user_mentions(
     inspection_id: Optional[int] = None,
 ) -> None:
     try:
-        from models import Notification
+        from CiviCodeAPI.models import Notification
 
         ids = _collect_user_ids(db, raw_ids, content)
         if not ids:
@@ -162,7 +162,7 @@ def _build_comment_response(db: Session, comment: Comment) -> CommentResponse:
     combadd = None
     if comment.address_id:
         try:
-            from models import Address
+            from CiviCodeAPI.models import Address
             address = db.query(Address).filter(Address.id == comment.address_id).first()
             combadd = address.combadd if address else None
         except Exception:
@@ -262,7 +262,7 @@ def get_comments(skip: int = 0, limit: int = 200, db: Session = Depends(get_db))
     combadd_by_address_id = {}
     if address_ids:
         try:
-            from models import Address
+            from CiviCodeAPI.models import Address
             for addr in db.query(Address).filter(Address.id.in_(list(address_ids))).all():
                 combadd_by_address_id[int(addr.id)] = addr.combadd
         except Exception:
@@ -695,7 +695,7 @@ async def create_contact_comment(
 
     # Detect mentions in contact comment (prefer explicit ids from frontend)
     try:
-        from models import Notification, Mention
+        from CiviCodeAPI.models import Notification, Mention
         ids: set[int] = set()
         if mentioned_user_ids:
             for part in str(mentioned_user_ids).split(','):

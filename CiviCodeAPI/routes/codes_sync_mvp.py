@@ -5,8 +5,8 @@ from typing import List, Optional, Dict, Tuple, Any
 from sqlalchemy.orm import Session
 import re
 
-from database import get_db     # existing dependency
-from models import Code         # SQLAlchemy model (unique on chapter+section)
+from CiviCodeAPI.database import get_db     # existing dependency
+from CiviCodeAPI.models import Code         # SQLAlchemy model (unique on chapter+section)
 
 router = APIRouter(prefix="/codes/sync", tags=["codes-sync"])
 
