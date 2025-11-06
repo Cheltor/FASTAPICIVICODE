@@ -1,6 +1,6 @@
 from CiviCodeAPI.models import User
 from CiviCodeAPI.utils import hash_password, verify_password
-from .conftest import TestingSessionLocal
+from CiviCodeAPI.tests.conftest import TestingSessionLocal, assign_sqlite_pk
 
 
 def test_password_reset_flow(test_client):
@@ -11,6 +11,7 @@ def test_password_reset_flow(test_client):
     try:
         session.query(User).filter(User.email == email).delete()
         user = User(email=email, encrypted_password=hash_password("InitialPass1"))
+        assign_sqlite_pk(session, user)
         session.add(user)
         session.commit()
     finally:
