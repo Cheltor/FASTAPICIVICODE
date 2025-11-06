@@ -197,6 +197,27 @@ class ViolationBase(BaseModel):
 class ViolationCreate(ViolationBase):
     codes: Optional[List[int]] = None  # Accept a list of code IDs when creating
 
+
+class ViolationFromCommentRequest(BaseModel):
+    """Payload for drafting a violation from an existing comment."""
+
+    deadline: Optional[str] = None
+    codes: Optional[List[int]] = None
+    user_id: Optional[int] = None
+    violation_type: Optional[str] = None
+    status: Optional[int] = None
+    description: Optional[str] = None
+    comment: Optional[str] = None
+
+    @validator("deadline")
+    def validate_deadline(cls, value):
+        if value is None:
+            return value
+        if value not in DEADLINE_OPTIONS:
+            raise ValueError(f"Invalid deadline value: {value}")
+        return value
+
+
 class ViolationResponse(ViolationBase):
     id: int
     created_at: datetime
