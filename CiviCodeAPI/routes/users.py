@@ -2,14 +2,14 @@ from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from typing import List, Union
-from models import User
-from schemas import UserResponse, UserCreate, UserUpdate, PasswordResetRequest, PasswordResetConfirm
-from database import get_db
-from utils import verify_password, hash_password
+from CiviCodeAPI.models import User
+from CiviCodeAPI.schemas import UserResponse, UserCreate, UserUpdate, PasswordResetRequest, PasswordResetConfirm
+from CiviCodeAPI.database import get_db
+from CiviCodeAPI.utils import verify_password, hash_password
 from datetime import datetime, timedelta
 import jwt
 import secrets
-from email_service import send_password_reset_email, FRONTEND_BASE_URL
+from CiviCodeAPI.email_service import send_password_reset_email, FRONTEND_BASE_URL
 
 SECRET_KEY = "trpdds2020"  
 ALGORITHM = "HS256"

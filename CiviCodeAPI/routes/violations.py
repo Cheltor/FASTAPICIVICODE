@@ -13,15 +13,15 @@ from fastapi import (
 from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional
 from azure.storage.blob import generate_blob_sas, BlobSasPermissions
-from models import Violation, Citation, ActiveStorageAttachment, ActiveStorageBlob, User, Notification
-from email_service import send_notification_email
-import schemas
-from database import get_db
+from CiviCodeAPI.models import Violation, Citation, ActiveStorageAttachment, ActiveStorageBlob, User, Notification
+from CiviCodeAPI.email_service import send_notification_email
+from CiviCodeAPI import schemas
+from CiviCodeAPI.database import get_db
 from sqlalchemy import desc
-import models
-import storage
-from image_utils import normalize_image_for_web
-from media_service import ensure_blob_browser_safe
+from CiviCodeAPI import models
+from CiviCodeAPI import storage
+from CiviCodeAPI.image_utils import normalize_image_for_web
+from CiviCodeAPI.media_service import ensure_blob_browser_safe
 import uuid
 import logging
 

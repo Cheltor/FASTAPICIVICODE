@@ -3,9 +3,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List, Optional
 from datetime import date
-from models import License, Inspection, Address, Business
-from schemas import LicenseCreate, LicenseResponse, LicenseUpdate
-from database import get_db
+from CiviCodeAPI.models import License, Inspection, Address, Business
+from CiviCodeAPI.schemas import LicenseCreate, LicenseResponse, LicenseUpdate
+from CiviCodeAPI.database import get_db
 
 router = APIRouter()
 

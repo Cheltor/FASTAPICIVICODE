@@ -1,23 +1,23 @@
 from fastapi import APIRouter, HTTPException, Depends, status, UploadFile, File, Form
 from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional
-from models import Inspection, Contact, Address, Area, Room, Prompt, Observation, Photo, ActiveStorageAttachment, ActiveStorageBlob, License, Permit, Violation, User, Notification, InspectionComment
-from schemas import InspectionResponse, ContactResponse, AddressResponse, AreaResponse, AreaCreate, RoomResponse, RoomCreate, PromptCreate, PromptResponse, ObservationCreate, ObservationResponse, ObservationUpdate
-from schemas import InspectionResponse, ContactResponse, AddressResponse, AreaResponse, AreaCreate, RoomResponse, RoomCreate, PromptCreate, PromptResponse, ObservationCreate, ObservationResponse, PotentialObservationResponse
+from CiviCodeAPI.models import Inspection, Contact, Address, Area, Room, Prompt, Observation, Photo, ActiveStorageAttachment, ActiveStorageBlob, License, Permit, Violation, User, Notification, InspectionComment
+from CiviCodeAPI.schemas import InspectionResponse, ContactResponse, AddressResponse, AreaResponse, AreaCreate, RoomResponse, RoomCreate, PromptCreate, PromptResponse, ObservationCreate, ObservationResponse, ObservationUpdate
+from CiviCodeAPI.schemas import InspectionResponse, ContactResponse, AddressResponse, AreaResponse, AreaCreate, RoomResponse, RoomCreate, PromptCreate, PromptResponse, ObservationCreate, ObservationResponse, PotentialObservationResponse
 # add import for inspection comment schemas
-from schemas import InspectionCommentCreate, InspectionCommentResponse
-from database import get_db
+from CiviCodeAPI.schemas import InspectionCommentCreate, InspectionCommentResponse
+from CiviCodeAPI.database import get_db
 # reuse mention helpers from the generic comments routes
-from routes.comments import _handle_user_mentions, _store_contact_mentions, _collect_contact_ids, _get_contact_mentions
-from schemas import UserResponse
-from models import Code
-import storage
-from image_utils import normalize_image_for_web
+from CiviCodeAPI.routes.comments import _handle_user_mentions, _store_contact_mentions, _collect_contact_ids, _get_contact_mentions
+from CiviCodeAPI.schemas import UserResponse
+from CiviCodeAPI.models import Code
+from CiviCodeAPI import storage
+from CiviCodeAPI.image_utils import normalize_image_for_web
 from datetime import datetime, timedelta, date
 from azure.storage.blob import generate_blob_sas, BlobSasPermissions
 import uuid
-from media_service import ensure_blob_browser_safe
-from email_service import send_notification_email
+from CiviCodeAPI.media_service import ensure_blob_browser_safe
+from CiviCodeAPI.email_service import send_notification_email
 from .auth import get_current_user, get_current_user_optional
 
 router = APIRouter()
@@ -168,42 +168,67 @@ def delete_inspection(inspection_id: int, db: Session = Depends(get_db)):
     if not insp:
         raise HTTPException(status_code=404, detail="Inspection not found")
     try:
+        timestamp = datetime.utcnow()
         # Clean up dependent records to avoid FK constraint failures
-        from models import License as LicenseModel, Permit as PermitModel, Notification as NotificationModel
-        from models import InspectionComment as InspectionCommentModel, InspectionCode as InspectionCodeModel, Area as AreaModel, Observation as ObservationModel, Photo as PhotoModel
-        from models import Violation as ViolationModel, Citation as CitationModel, ViolationComment as ViolationCommentModel, ViolationCode as ViolationCodeModel
+        from CiviCodeAPI.models import License as LicenseModel, Permit as PermitModel, Notification as NotificationModel
+        from CiviCodeAPI.models import InspectionComment as InspectionCommentModel, InspectionCode as InspectionCodeModel, Area as AreaModel, Observation as ObservationModel, Photo as PhotoModel
+        from CiviCodeAPI.models import Violation as ViolationModel, Citation as CitationModel, ViolationComment as ViolationCommentModel, ViolationCode as ViolationCodeModel
 
         # Delete licenses and permits linked to this inspection
-        db.query(LicenseModel).filter(LicenseModel.inspection_id == inspection_id).delete(synchronize_session=False)
-        db.query(PermitModel).filter(PermitModel.inspection_id == inspection_id).delete(synchronize_session=False)
+        db.query(LicenseModel).filter(LicenseModel.inspection_id == inspection_id).update(
+            {LicenseModel.deleted_at: timestamp}, synchronize_session=False
+        )
+        db.query(PermitModel).filter(PermitModel.inspection_id == inspection_id).update(
+            {PermitModel.deleted_at: timestamp}, synchronize_session=False
+        )
 
         # Delete notifications linked to this inspection
-        db.query(NotificationModel).filter(NotificationModel.inspection_id == inspection_id).delete(synchronize_session=False)
+        db.query(NotificationModel).filter(NotificationModel.inspection_id == inspection_id).update(
+            {NotificationModel.deleted_at: timestamp}, synchronize_session=False
+        )
 
         # Delete inspection comments and codes
-        db.query(InspectionCommentModel).filter(InspectionCommentModel.inspection_id == inspection_id).delete(synchronize_session=False)
-        db.query(InspectionCodeModel).filter(InspectionCodeModel.inspection_id == inspection_id).delete(synchronize_session=False)
+        db.query(InspectionCommentModel).filter(InspectionCommentModel.inspection_id == inspection_id).update(
+            {InspectionCommentModel.deleted_at: timestamp}, synchronize_session=False
+        )
+        db.query(InspectionCodeModel).filter(InspectionCodeModel.inspection_id == inspection_id).update(
+            {InspectionCodeModel.deleted_at: timestamp}, synchronize_session=False
+        )
 
         # Areas: compute observation ids first, delete photos -> observations -> areas
         area_ids = [row.id for row in db.query(AreaModel.id).filter(AreaModel.inspection_id == inspection_id).all()]
         if area_ids:
             obs_ids = [row.id for row in db.query(ObservationModel.id).filter(ObservationModel.area_id.in_(area_ids)).all()]
             if obs_ids:
-                db.query(PhotoModel).filter(PhotoModel.observation_id.in_(obs_ids)).delete(synchronize_session=False)
-                db.query(ObservationModel).filter(ObservationModel.id.in_(obs_ids)).delete(synchronize_session=False)
-            db.query(AreaModel).filter(AreaModel.id.in_(area_ids)).delete(synchronize_session=False)
+                db.query(PhotoModel).filter(PhotoModel.observation_id.in_(obs_ids)).update(
+                    {PhotoModel.deleted_at: timestamp}, synchronize_session=False
+                )
+                db.query(ObservationModel).filter(ObservationModel.id.in_(obs_ids)).update(
+                    {ObservationModel.deleted_at: timestamp}, synchronize_session=False
+                )
+            db.query(AreaModel).filter(AreaModel.id.in_(area_ids)).update(
+                {AreaModel.deleted_at: timestamp}, synchronize_session=False
+            )
 
         # Violations linked to this inspection and their dependents
         vio_ids = [row.id for row in db.query(ViolationModel.id).filter(ViolationModel.inspection_id == inspection_id).all()]
         if vio_ids:
             # Delete citations
-            db.query(CitationModel).filter(CitationModel.violation_id.in_(vio_ids)).delete(synchronize_session=False)
+            db.query(CitationModel).filter(CitationModel.violation_id.in_(vio_ids)).update(
+                {CitationModel.deleted_at: timestamp}, synchronize_session=False
+            )
             # Delete violation comments
-            db.query(ViolationCommentModel).filter(ViolationCommentModel.violation_id.in_(vio_ids)).delete(synchronize_session=False)
+            db.query(ViolationCommentModel).filter(ViolationCommentModel.violation_id.in_(vio_ids)).update(
+                {ViolationCommentModel.deleted_at: timestamp}, synchronize_session=False
+            )
             # Delete violation<->code join rows
-            db.query(ViolationCodeModel).filter(ViolationCodeModel.violation_id.in_(vio_ids)).delete(synchronize_session=False)
+            db.query(ViolationCodeModel).filter(ViolationCodeModel.violation_id.in_(vio_ids)).update(
+                {ViolationCodeModel.deleted_at: timestamp}, synchronize_session=False
+            )
             # Finally delete violations
-            db.query(ViolationModel).filter(ViolationModel.id.in_(vio_ids)).delete(synchronize_session=False)
+            db.query(ViolationModel).filter(ViolationModel.id.in_(vio_ids)).update(
+                {ViolationModel.deleted_at: timestamp}, synchronize_session=False
+            )
 
         db.delete(insp)
         db.commit()
@@ -218,30 +243,55 @@ def delete_complaint(inspection_id: int, db: Session = Depends(get_db)):
     if not insp:
         raise HTTPException(status_code=404, detail="Complaint not found")
     try:
+        timestamp = datetime.utcnow()
         # Clean up dependent records (same as inspections)
-        from models import License as LicenseModel, Permit as PermitModel, Notification as NotificationModel
-        from models import InspectionComment as InspectionCommentModel, InspectionCode as InspectionCodeModel, Area as AreaModel, Observation as ObservationModel, Photo as PhotoModel
-        from models import Violation as ViolationModel, Citation as CitationModel, ViolationComment as ViolationCommentModel, ViolationCode as ViolationCodeModel
+        from CiviCodeAPI.models import License as LicenseModel, Permit as PermitModel, Notification as NotificationModel
+        from CiviCodeAPI.models import InspectionComment as InspectionCommentModel, InspectionCode as InspectionCodeModel, Area as AreaModel, Observation as ObservationModel, Photo as PhotoModel
+        from CiviCodeAPI.models import Violation as ViolationModel, Citation as CitationModel, ViolationComment as ViolationCommentModel, ViolationCode as ViolationCodeModel
 
-        db.query(LicenseModel).filter(LicenseModel.inspection_id == inspection_id).delete(synchronize_session=False)
-        db.query(PermitModel).filter(PermitModel.inspection_id == inspection_id).delete(synchronize_session=False)
-        db.query(NotificationModel).filter(NotificationModel.inspection_id == inspection_id).delete(synchronize_session=False)
-        db.query(InspectionCommentModel).filter(InspectionCommentModel.inspection_id == inspection_id).delete(synchronize_session=False)
-        db.query(InspectionCodeModel).filter(InspectionCodeModel.inspection_id == inspection_id).delete(synchronize_session=False)
+        db.query(LicenseModel).filter(LicenseModel.inspection_id == inspection_id).update(
+            {LicenseModel.deleted_at: timestamp}, synchronize_session=False
+        )
+        db.query(PermitModel).filter(PermitModel.inspection_id == inspection_id).update(
+            {PermitModel.deleted_at: timestamp}, synchronize_session=False
+        )
+        db.query(NotificationModel).filter(NotificationModel.inspection_id == inspection_id).update(
+            {NotificationModel.deleted_at: timestamp}, synchronize_session=False
+        )
+        db.query(InspectionCommentModel).filter(InspectionCommentModel.inspection_id == inspection_id).update(
+            {InspectionCommentModel.deleted_at: timestamp}, synchronize_session=False
+        )
+        db.query(InspectionCodeModel).filter(InspectionCodeModel.inspection_id == inspection_id).update(
+            {InspectionCodeModel.deleted_at: timestamp}, synchronize_session=False
+        )
         area_ids = [row.id for row in db.query(AreaModel.id).filter(AreaModel.inspection_id == inspection_id).all()]
         if area_ids:
             obs_ids = [row.id for row in db.query(ObservationModel.id).filter(ObservationModel.area_id.in_(area_ids)).all()]
             if obs_ids:
-                db.query(PhotoModel).filter(PhotoModel.observation_id.in_(obs_ids)).delete(synchronize_session=False)
-                db.query(ObservationModel).filter(ObservationModel.id.in_(obs_ids)).delete(synchronize_session=False)
-            db.query(AreaModel).filter(AreaModel.id.in_(area_ids)).delete(synchronize_session=False)
+                db.query(PhotoModel).filter(PhotoModel.observation_id.in_(obs_ids)).update(
+                    {PhotoModel.deleted_at: timestamp}, synchronize_session=False
+                )
+                db.query(ObservationModel).filter(ObservationModel.id.in_(obs_ids)).update(
+                    {ObservationModel.deleted_at: timestamp}, synchronize_session=False
+                )
+            db.query(AreaModel).filter(AreaModel.id.in_(area_ids)).update(
+                {AreaModel.deleted_at: timestamp}, synchronize_session=False
+            )
 
         vio_ids = [row.id for row in db.query(ViolationModel.id).filter(ViolationModel.inspection_id == inspection_id).all()]
         if vio_ids:
-            db.query(CitationModel).filter(CitationModel.violation_id.in_(vio_ids)).delete(synchronize_session=False)
-            db.query(ViolationCommentModel).filter(ViolationCommentModel.violation_id.in_(vio_ids)).delete(synchronize_session=False)
-            db.query(ViolationCodeModel).filter(ViolationCodeModel.violation_id.in_(vio_ids)).delete(synchronize_session=False)
-            db.query(ViolationModel).filter(ViolationModel.id.in_(vio_ids)).delete(synchronize_session=False)
+            db.query(CitationModel).filter(CitationModel.violation_id.in_(vio_ids)).update(
+                {CitationModel.deleted_at: timestamp}, synchronize_session=False
+            )
+            db.query(ViolationCommentModel).filter(ViolationCommentModel.violation_id.in_(vio_ids)).update(
+                {ViolationCommentModel.deleted_at: timestamp}, synchronize_session=False
+            )
+            db.query(ViolationCodeModel).filter(ViolationCodeModel.violation_id.in_(vio_ids)).update(
+                {ViolationCodeModel.deleted_at: timestamp}, synchronize_session=False
+            )
+            db.query(ViolationModel).filter(ViolationModel.id.in_(vio_ids)).update(
+                {ViolationModel.deleted_at: timestamp}, synchronize_session=False
+            )
 
         db.delete(insp)
         db.commit()
@@ -964,7 +1014,7 @@ def get_potential_observations_for_inspection(inspection_id: int, db: Session = 
         unit_number = None
         if area.unit_id:
             # Lazy fetch unit number to avoid heavy join; small per-item overhead acceptable here
-            from models import Unit  # local import to avoid circular
+            from CiviCodeAPI.models import Unit  # local import to avoid circular
             unit = db.query(Unit).filter(Unit.id == area.unit_id).first()
             unit_number = unit.number if unit else None
         results.append(PotentialObservationResponse(
@@ -1080,7 +1130,7 @@ def get_inspection_comments(inspection_id: int, db: Session = Depends(get_db)):
     mentions_by_comment: dict[int, list[User]] = {cid: [] for cid in comment_ids}
     try:
         if comment_ids:
-            from models import Mention
+            from CiviCodeAPI.models import Mention
 
             rows = (
                 db.query(User, Mention)
@@ -1097,7 +1147,7 @@ def get_inspection_comments(inspection_id: int, db: Session = Depends(get_db)):
     contact_mentions_by_comment: dict[int, list[Contact]] = {cid: [] for cid in comment_ids}
     try:
         if comment_ids:
-            from models import CommentContactLink, Contact
+            from CiviCodeAPI.models import CommentContactLink, Contact
 
             contact_rows = (
                 db.query(Contact, CommentContactLink)
@@ -1184,7 +1234,7 @@ def create_inspection_comment(
     try:
         user = db.query(User).filter(User.id == comment.user_id).first() if comment.user_id else None
         try:
-            from models import Mention
+            from CiviCodeAPI.models import Mention
 
             user_mentions = (
                 db.query(User)

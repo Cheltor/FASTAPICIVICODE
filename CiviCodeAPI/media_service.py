@@ -3,10 +3,10 @@ from typing import Optional, Tuple
 
 from sqlalchemy.orm import Session
 
-from storage import blob_service_client, CONTAINER_NAME
-from models import ActiveStorageBlob
-from image_utils import normalize_image_for_web
-from video_utils import transcode_to_mp4_and_poster
+from CiviCodeAPI.storage import blob_service_client, CONTAINER_NAME
+from CiviCodeAPI.models import ActiveStorageBlob
+from CiviCodeAPI.image_utils import normalize_image_for_web
+from CiviCodeAPI.video_utils import transcode_to_mp4_and_poster
 
 
 def _derive_new_key(old_key: str, new_filename: str) -> str:

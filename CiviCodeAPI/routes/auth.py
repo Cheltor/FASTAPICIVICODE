@@ -3,8 +3,8 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 import jwt
 
-from database import get_db
-from models import User
+from CiviCodeAPI.database import get_db
+from CiviCodeAPI.models import User
 
 SECRET_KEY = "trpdds2020"
 ALGORITHM = "HS256"

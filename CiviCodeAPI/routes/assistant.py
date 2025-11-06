@@ -6,12 +6,12 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, status, Depends
 from pydantic import AliasChoices, BaseModel, Field
 
-from genai_client import OpenAIConfigError, run_assistant
+from CiviCodeAPI.genai_client import OpenAIConfigError, run_assistant
 from .auth import get_current_user
-from models import User
+from CiviCodeAPI.models import User
 from sqlalchemy.orm import Session
-from database import get_db
-from models import ChatLog
+from CiviCodeAPI.database import get_db
+from CiviCodeAPI.models import ChatLog
 
 logger = logging.getLogger(__name__)
 

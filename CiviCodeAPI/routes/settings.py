@@ -1,14 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from database import get_db
-from models import AppSetting, User, AppSettingAudit, ChatLog
+from CiviCodeAPI.database import get_db
+from CiviCodeAPI.models import AppSetting, User, AppSettingAudit, ChatLog
 import jwt
 from fastapi.security import OAuth2PasswordBearer
 from fastapi.responses import StreamingResponse
 import logging
 import json
-from settings_broadcast import broadcaster
+from CiviCodeAPI.settings_broadcast import broadcaster
 from typing import Optional
 from datetime import datetime
 from sqlalchemy.orm import joinedload
@@ -155,7 +155,7 @@ def get_chat_logs(
         query = query.filter(ChatLog.user_id == user_id)
     if user_email:
         # find matching users (partial case-insensitive match)
-        from models import User as UserModel
+        from CiviCodeAPI.models import User as UserModel
         matched = db.query(UserModel.id).filter(UserModel.email.ilike(f"%{user_email}%")).all()
         matched_ids = [m[0] for m in matched]
         if matched_ids:

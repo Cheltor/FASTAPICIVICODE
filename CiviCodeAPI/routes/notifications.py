@@ -1,13 +1,13 @@
 from fastapi import APIRouter, HTTPException, Depends, status, Form
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from database import get_db
-from models import Notification, Inspection, User, Comment, Address, Unit, ContactComment, Contact, ViolationComment, Violation
-from schemas import NotificationCreate, NotificationResponse
+from CiviCodeAPI.database import get_db
+from CiviCodeAPI.models import Notification, Inspection, User, Comment, Address, Unit, ContactComment, Contact, ViolationComment, Violation
+from CiviCodeAPI.schemas import NotificationCreate, NotificationResponse
 from fastapi.security import OAuth2PasswordBearer
 import jwt
-from email_service import send_notification_email
-from email_service import EMAIL_ENABLED, SENDGRID_API_KEY, SENDGRID_FROM_EMAIL
+from CiviCodeAPI.email_service import send_notification_email
+from CiviCodeAPI.email_service import EMAIL_ENABLED, SENDGRID_API_KEY, SENDGRID_FROM_EMAIL
 from pydantic import BaseModel
 import os
 

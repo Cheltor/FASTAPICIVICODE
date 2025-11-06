@@ -2,9 +2,9 @@
 from fastapi import APIRouter, HTTPException, Depends, Body
 from sqlalchemy.orm import Session, joinedload
 from typing import List
-from models import Citation, Violation, Code
-from schemas import CitationCreate, CitationResponse, ViolationResponse
-from database import get_db
+from CiviCodeAPI.models import Citation, Violation, Code
+from CiviCodeAPI.schemas import CitationCreate, CitationResponse, ViolationResponse
+from CiviCodeAPI.database import get_db
 
 router = APIRouter()
 

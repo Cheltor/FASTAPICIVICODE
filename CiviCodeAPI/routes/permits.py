@@ -2,9 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List, Optional
-from database import get_db
-from models import Permit, Inspection, Address, Business
-from schemas import PermitCreate, PermitResponse, PermitUpdate
+from CiviCodeAPI.database import get_db
+from CiviCodeAPI.models import Permit, Inspection, Address, Business
+from CiviCodeAPI.schemas import PermitCreate, PermitResponse, PermitUpdate
 
 router = APIRouter()
 

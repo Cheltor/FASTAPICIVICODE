@@ -1,16 +1,30 @@
 
+from datetime import datetime
+from typing import List, Optional
+
 from fastapi import APIRouter, HTTPException, Depends, Query, Body
 from fastapi.security import OAuth2PasswordBearer
-from sqlalchemy.orm import Session
-from typing import List, Optional
 from sqlalchemy import or_, func
 from sqlalchemy.exc import IntegrityError
-from storage import blob_service_client, CONTAINER_NAME
-from media_service import ensure_blob_browser_safe
-from database import get_db  # Ensure get_db is imported before use
-from models import Address, Comment, Violation, Inspection, Unit, ActiveStorageAttachment, ActiveStorageBlob, Contact, AddressContact, User
-import models
-from schemas import (
+from sqlalchemy.orm import Session
+
+from CiviCodeAPI.database import get_db  # Ensure get_db is imported before use
+from CiviCodeAPI.media_service import ensure_blob_browser_safe
+from CiviCodeAPI.models import (
+    ActiveStorageAttachment,
+    ActiveStorageBlob,
+    Address,
+    AddressContact,
+    Comment,
+    Contact,
+    Inspection,
+    Unit,
+    User,
+    Violation,
+)
+from CiviCodeAPI import models
+from CiviCodeAPI.storage import blob_service_client, CONTAINER_NAME
+from CiviCodeAPI.schemas import (
     AddressCreate,
     AddressResponse,
     CommentResponse,
@@ -27,7 +41,7 @@ from schemas import (
     SDATRefreshResponse,
 )
 
-from sdat_client import fetch_owner_info
+from CiviCodeAPI.sdat_client import fetch_owner_info
 
 router = APIRouter()
 
@@ -274,48 +288,79 @@ def delete_address(address_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Address not found")
 
     try:
+        timestamp = datetime.utcnow()
         # Remove address-contact associations
         db.query(AddressContact).filter(AddressContact.address_id == address_id).delete(synchronize_session=False)
 
         # Delete comments for this address
-        db.query(Comment).filter(Comment.address_id == address_id).delete(synchronize_session=False)
+        db.query(Comment).filter(Comment.address_id == address_id).update(
+            {Comment.deleted_at: timestamp}, synchronize_session=False
+        )
 
         # Delete units under this address (unit has FK address_id)
-        db.query(Unit).filter(Unit.address_id == address_id).delete(synchronize_session=False)
+        db.query(Unit).filter(Unit.address_id == address_id).update(
+            {Unit.deleted_at: timestamp}, synchronize_session=False
+        )
 
         # Delete violations tied to this address and their dependents
-        from models import Violation as ViolationModel, Citation as CitationModel, ViolationComment as ViolationCommentModel, ViolationCode as ViolationCodeModel
+        from CiviCodeAPI.models import Violation as ViolationModel, Citation as CitationModel, ViolationComment as ViolationCommentModel, ViolationCode as ViolationCodeModel
         vio_ids = [row.id for row in db.query(ViolationModel.id).filter(ViolationModel.address_id == address_id).all()]
         if vio_ids:
-            db.query(CitationModel).filter(CitationModel.violation_id.in_(vio_ids)).delete(synchronize_session=False)
-            db.query(ViolationCommentModel).filter(ViolationCommentModel.violation_id.in_(vio_ids)).delete(synchronize_session=False)
-            db.query(ViolationCodeModel).filter(ViolationCodeModel.violation_id.in_(vio_ids)).delete(synchronize_session=False)
-            db.query(ViolationModel).filter(ViolationModel.id.in_(vio_ids)).delete(synchronize_session=False)
+            db.query(CitationModel).filter(CitationModel.violation_id.in_(vio_ids)).update(
+                {CitationModel.deleted_at: timestamp}, synchronize_session=False
+            )
+            db.query(ViolationCommentModel).filter(ViolationCommentModel.violation_id.in_(vio_ids)).update(
+                {ViolationCommentModel.deleted_at: timestamp}, synchronize_session=False
+            )
+            db.query(ViolationCodeModel).filter(ViolationCodeModel.violation_id.in_(vio_ids)).update(
+                {ViolationCodeModel.deleted_at: timestamp}, synchronize_session=False
+            )
+            db.query(ViolationModel).filter(ViolationModel.id.in_(vio_ids)).update(
+                {ViolationModel.deleted_at: timestamp}, synchronize_session=False
+            )
 
         # Delete inspections tied to this address and their dependents
-        from models import Inspection as InspectionModel
+        from CiviCodeAPI.models import Inspection as InspectionModel
         insp_ids = [row.id for row in db.query(InspectionModel.id).filter(InspectionModel.address_id == address_id).all()]
         if insp_ids:
-            from models import License as LicenseModel, Permit as PermitModel, Notification as NotificationModel
-            from models import InspectionComment as InspectionCommentModel, InspectionCode as InspectionCodeModel, Area as AreaModel, Observation as ObservationModel, Photo as PhotoModel
+            from CiviCodeAPI.models import License as LicenseModel, Permit as PermitModel, Notification as NotificationModel
+            from CiviCodeAPI.models import InspectionComment as InspectionCommentModel, InspectionCode as InspectionCodeModel, Area as AreaModel, Observation as ObservationModel, Photo as PhotoModel
             # Delete child tables of inspections
-            db.query(LicenseModel).filter(LicenseModel.inspection_id.in_(insp_ids)).delete(synchronize_session=False)
-            db.query(PermitModel).filter(PermitModel.inspection_id.in_(insp_ids)).delete(synchronize_session=False)
-            db.query(NotificationModel).filter(NotificationModel.inspection_id.in_(insp_ids)).delete(synchronize_session=False)
-            db.query(InspectionCommentModel).filter(InspectionCommentModel.inspection_id.in_(insp_ids)).delete(synchronize_session=False)
-            db.query(InspectionCodeModel).filter(InspectionCodeModel.inspection_id.in_(insp_ids)).delete(synchronize_session=False)
+            db.query(LicenseModel).filter(LicenseModel.inspection_id.in_(insp_ids)).update(
+                {LicenseModel.deleted_at: timestamp}, synchronize_session=False
+            )
+            db.query(PermitModel).filter(PermitModel.inspection_id.in_(insp_ids)).update(
+                {PermitModel.deleted_at: timestamp}, synchronize_session=False
+            )
+            db.query(NotificationModel).filter(NotificationModel.inspection_id.in_(insp_ids)).update(
+                {NotificationModel.deleted_at: timestamp}, synchronize_session=False
+            )
+            db.query(InspectionCommentModel).filter(InspectionCommentModel.inspection_id.in_(insp_ids)).update(
+                {InspectionCommentModel.deleted_at: timestamp}, synchronize_session=False
+            )
+            db.query(InspectionCodeModel).filter(InspectionCodeModel.inspection_id.in_(insp_ids)).update(
+                {InspectionCodeModel.deleted_at: timestamp}, synchronize_session=False
+            )
 
             # Areas under inspections -> observations -> photos
             area_ids = [row.id for row in db.query(AreaModel.id).filter(AreaModel.inspection_id.in_(insp_ids)).all()]
             if area_ids:
                 obs_ids = [row.id for row in db.query(ObservationModel.id).filter(ObservationModel.area_id.in_(area_ids)).all()]
                 if obs_ids:
-                    db.query(PhotoModel).filter(PhotoModel.observation_id.in_(obs_ids)).delete(synchronize_session=False)
-                    db.query(ObservationModel).filter(ObservationModel.id.in_(obs_ids)).delete(synchronize_session=False)
-                db.query(AreaModel).filter(AreaModel.id.in_(area_ids)).delete(synchronize_session=False)
+                    db.query(PhotoModel).filter(PhotoModel.observation_id.in_(obs_ids)).update(
+                        {PhotoModel.deleted_at: timestamp}, synchronize_session=False
+                    )
+                    db.query(ObservationModel).filter(ObservationModel.id.in_(obs_ids)).update(
+                        {ObservationModel.deleted_at: timestamp}, synchronize_session=False
+                    )
+                db.query(AreaModel).filter(AreaModel.id.in_(area_ids)).update(
+                    {AreaModel.deleted_at: timestamp}, synchronize_session=False
+                )
 
             # Delete the inspections themselves
-            db.query(InspectionModel).filter(InspectionModel.id.in_(insp_ids)).delete(synchronize_session=False)
+            db.query(InspectionModel).filter(InspectionModel.id.in_(insp_ids)).update(
+                {InspectionModel.deleted_at: timestamp}, synchronize_session=False
+            )
 
         # Finally, delete the address
         db.delete(address)

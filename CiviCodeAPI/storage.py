@@ -73,7 +73,7 @@ class _LazyContainerClient:
 
 # Expose module-level names for backward compatibility. These will be lazy proxies
 # that initialize the real clients on first access. Existing code that does
-# `from storage import blob_service_client, container_client, CONTAINER_NAME,
+# `from CiviCodeAPI.storage import blob_service_client, container_client, CONTAINER_NAME,
 # account_name, account_key` will import these names and work as before.
 blob_service_client = _LazyBlobServiceClient()
 container_client = _LazyContainerClient()

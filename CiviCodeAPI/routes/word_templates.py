@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Response, Depends
 from sqlalchemy.orm import Session, joinedload
-from database import get_db
-from models import Violation, License, Inspection, Business
+from CiviCodeAPI.database import get_db
+from CiviCodeAPI.models import Violation, License, Inspection, Business
 from docxtpl import DocxTemplate
 from io import BytesIO
 import os

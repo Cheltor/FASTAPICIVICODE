@@ -10,6 +10,22 @@ except ImportError:
     from .constants import DEADLINE_OPTIONS, DEADLINE_VALUES
 
 
+class SoftDeleteMixin:
+    """Mixin that adds soft delete support to mapped models."""
+
+    deleted_at = Column(DateTime, nullable=True, index=True)
+
+    def mark_deleted(self) -> None:
+        """Mark the instance as deleted if it has not been already."""
+
+        if self.deleted_at is None:
+            self.deleted_at = datetime.utcnow()
+
+    @property
+    def is_deleted(self) -> bool:
+        return self.deleted_at is not None
+
+
 Base = declarative_base()
 
 # Small table for application-wide settings (key/value)
@@ -82,7 +98,7 @@ class ActiveStorageVariantRecord(Base):
     variation_digest = Column(String, nullable=False)
 
 # Addresses
-class Address(Base):
+class Address(SoftDeleteMixin, Base):
     __tablename__ = "addresses"
 
     id = Column(BigInteger, primary_key=True, index=True)
@@ -139,7 +155,7 @@ class AddressContact(Base):
 
 
 # Areas
-class Area(Base):
+class Area(SoftDeleteMixin, Base):
     __tablename__ = "areas"
 
     id = Column(BigInteger, primary_key=True, index=True)
@@ -169,7 +185,7 @@ class AreaCode(Base):
 
 
 # Businesses
-class Business(Base):
+class Business(SoftDeleteMixin, Base):
     __tablename__ = "businesses"
 
     id = Column(BigInteger, primary_key=True, index=True)
@@ -207,7 +223,7 @@ class BusinessContact(Base):
 
 
 # Citations
-class Citation(Base):
+class Citation(SoftDeleteMixin, Base):
     __tablename__ = "citations"
 
     id = Column(BigInteger, primary_key=True, index=True)
@@ -239,7 +255,7 @@ class CitationCode(Base):
 
 
 # CitationComments
-class CitationComment(Base):
+class CitationComment(SoftDeleteMixin, Base):
     __tablename__ = "citation_comments"
 
     id = Column(BigInteger, primary_key=True, index=True)
@@ -251,7 +267,7 @@ class CitationComment(Base):
 
 
 # Codes
-class Code(Base):
+class Code(SoftDeleteMixin, Base):
     __tablename__ = "codes"
 
     id = Column(BigInteger, primary_key=True, index=True)
@@ -271,7 +287,7 @@ class Code(Base):
     )
 
 # Comments
-class Comment(Base):
+class Comment(SoftDeleteMixin, Base):
     __tablename__ = "comments"
     
     id = Column(BigInteger, primary_key=True, index=True)
@@ -300,7 +316,7 @@ class Concern(Base):
 
 
 # Contacts
-class Contact(Base):
+class Contact(SoftDeleteMixin, Base):
     __tablename__ = "contacts"
 
     id = Column(BigInteger, primary_key=True, index=True)
@@ -321,7 +337,7 @@ class Contact(Base):
     businesses = relationship("Business", secondary="business_contacts", back_populates="contacts", overlaps="business_associations,business,business_contacts")
 
 # ContactComments
-class ContactComment(Base):
+class ContactComment(SoftDeleteMixin, Base):
     __tablename__ = "contact_comments"
     
     id = Column(BigInteger, primary_key=True, index=True)
@@ -332,7 +348,7 @@ class ContactComment(Base):
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)  # Auto-update updated_at timestamp
 
 # Units
-class Unit(Base):
+class Unit(SoftDeleteMixin, Base):
     __tablename__ = "units"
 
     id = Column(BigInteger, primary_key=True, index=True)
@@ -349,7 +365,7 @@ class Unit(Base):
     comments = relationship("Comment", back_populates="unit")  # Unit has many Comments
 
 # InspectionCodes
-class InspectionCode(Base):
+class InspectionCode(SoftDeleteMixin, Base):
     __tablename__ = "inspection_codes"
     
     id = Column(BigInteger, primary_key=True, index=True)
@@ -360,7 +376,7 @@ class InspectionCode(Base):
 
 
 # InspectionComments
-class InspectionComment(Base):
+class InspectionComment(SoftDeleteMixin, Base):
     __tablename__ = "inspection_comments"
     
     id = Column(BigInteger, primary_key=True, index=True)
@@ -375,7 +391,7 @@ class InspectionComment(Base):
     inspection = relationship("Inspection", back_populates="inspection_comments")  # link to inspection
 
 # Inspections
-class Inspection(Base):
+class Inspection(SoftDeleteMixin, Base):
     __tablename__ = "inspections"
     
     id = Column(BigInteger, primary_key=True, index=True)
@@ -426,7 +442,7 @@ class Inspection(Base):
     inspection_comments = relationship("InspectionComment", back_populates="inspection", cascade="all, delete-orphan")  # comments on inspection
 
 # Licenses
-class License(Base):
+class License(SoftDeleteMixin, Base):
     __tablename__ = "licenses"
     
     id = Column(BigInteger, primary_key=True, index=True)
@@ -447,7 +463,7 @@ class License(Base):
     inspection = relationship("Inspection", back_populates="licenses")
 
 # Permits
-class Permit(Base):
+class Permit(SoftDeleteMixin, Base):
     __tablename__ = "permits"
 
     id = Column(BigInteger, primary_key=True, index=True)
@@ -470,7 +486,7 @@ class Permit(Base):
 
 
 # Notifications
-class Notification(Base):
+class Notification(SoftDeleteMixin, Base):
     __tablename__ = "notifications"
     
     id = Column(BigInteger, primary_key=True, index=True)
@@ -511,7 +527,7 @@ class CommentContactLink(Base):
 
 
 # Observations
-class Observation(Base):
+class Observation(SoftDeleteMixin, Base):
     __tablename__ = "observations"
     
     id = Column(BigInteger, primary_key=True, index=True)
@@ -534,7 +550,7 @@ class Observation(Base):
     )
 
 # Photos
-class Photo(Base):
+class Photo(SoftDeleteMixin, Base):
     __tablename__ = "photos"
     
     id = Column(BigInteger, primary_key=True, index=True)
@@ -554,7 +570,7 @@ class ObservationCode(Base):
     code_id = Column(BigInteger, ForeignKey('codes.id'), primary_key=True, nullable=False)
 
 # Prompts
-class Prompt(Base):
+class Prompt(SoftDeleteMixin, Base):
     __tablename__ = "prompts"
     
     id = Column(BigInteger, primary_key=True, index=True)
@@ -567,7 +583,7 @@ class Prompt(Base):
     room = relationship("Room", back_populates="prompts")  # Prompt belongs to a Room
 
 # Rooms
-class Room(Base):
+class Room(SoftDeleteMixin, Base):
     __tablename__ = "rooms"
     
     id = Column(BigInteger, primary_key=True, index=True)
@@ -590,7 +606,7 @@ class UnitContact(Base):
 
 
 # Users
-class User(Base):
+class User(SoftDeleteMixin, Base):
     __tablename__ = "users"
 
     id = Column(BigInteger, primary_key=True, index=True)
@@ -625,7 +641,7 @@ class Version(Base):
     created_at = Column(DateTime)
 
 # ViolationCodes
-class ViolationCode(Base):
+class ViolationCode(SoftDeleteMixin, Base):
     __tablename__ = "violation_codes"
     
     id = Column(BigInteger, primary_key=True, index=True)
@@ -636,7 +652,7 @@ class ViolationCode(Base):
 
 
 # ViolationComments
-class ViolationComment(Base):
+class ViolationComment(SoftDeleteMixin, Base):
     __tablename__ = "violation_comments"
     
     id = Column(BigInteger, primary_key=True, index=True)
@@ -651,7 +667,7 @@ class ViolationComment(Base):
 
 
 # Violations
-class Violation(Base):
+class Violation(SoftDeleteMixin, Base):
     __tablename__ = "violations"
     
     id = Column(BigInteger, primary_key=True, index=True)

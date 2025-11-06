@@ -1,5 +1,6 @@
-import os
 import logging
+import os
+
 from dotenv import load_dotenv
 
 # Load environment variables before importing app modules that read them
@@ -14,8 +15,27 @@ else:
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
-from routes import addresses_router, users_router, businesses_router, contacts_router, violations_router, comments_router, citations_router, inspections_router, codes_router, codes_sync_mvp_router, licenses_router, dashboard_router, permits_router, sir_router, notifications_router, assistant_router, settings_router, word_templates  # Updated import
-from database import engine, Base
+from .routes import (
+    addresses_router,
+    assistant_router,
+    businesses_router,
+    citations_router,
+    codes_router,
+    codes_sync_mvp_router,
+    comments_router,
+    contacts_router,
+    dashboard_router,
+    inspections_router,
+    licenses_router,
+    notifications_router,
+    permits_router,
+    settings_router,
+    sir_router,
+    users_router,
+    violations_router,
+    word_templates,
+)
+from .database import engine, Base
 import uvicorn
 
 
