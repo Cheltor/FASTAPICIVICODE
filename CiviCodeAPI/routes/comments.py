@@ -14,6 +14,8 @@ from schemas import (
     UserResponse,
     UnitResponse,
     CommentPageResponse,
+    ViolationResponse,
+    ViolationFromCommentRequest,
 )
 from database import get_db
 import storage
@@ -24,6 +26,7 @@ import logging
 import uuid
 import jwt
 import re
+import models
 from email_service import send_notification_email
 
 USER_MENTION_RE = re.compile(r"@([A-Za-z0-9@._\- ]+)")
@@ -206,6 +209,79 @@ def get_comment_mentions(comment_id: int, db: Session = Depends(get_db)):
         .all()
     )
     return mentions
+
+
+@router.post("/comments/{comment_id}/violations", response_model=ViolationResponse)
+def create_violation_from_comment(
+    comment_id: int,
+    payload: ViolationFromCommentRequest = Body(...),
+    db: Session = Depends(get_db),
+):
+    """Create a violation pre-populated with data copied from a comment."""
+
+    comment = db.query(Comment).filter(Comment.id == comment_id).first()
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+
+    if not comment.address_id:
+        raise HTTPException(status_code=400, detail="Comment is not associated with an address")
+
+    deadline = payload.deadline
+    if not deadline:
+        raise HTTPException(status_code=400, detail="Deadline is required to create a violation")
+
+    user_id = payload.user_id or comment.user_id
+    if not user_id:
+        raise HTTPException(status_code=400, detail="A violation assignee is required")
+
+    violation = models.Violation(
+        address_id=comment.address_id,
+        user_id=user_id,
+        unit_id=comment.unit_id,
+        deadline=deadline,
+        violation_type=payload.violation_type or "doorhanger",
+        status=payload.status if payload.status is not None else 0,
+        description=payload.description if payload.description is not None else comment.content,
+        comment=payload.comment if payload.comment is not None else comment.content,
+    )
+
+    try:
+        db.add(violation)
+        db.flush()
+
+        if payload.codes:
+            codes = db.query(models.Code).filter(models.Code.id.in_(payload.codes)).all()
+            violation.codes = codes
+
+        attachments = (
+            db.query(ActiveStorageAttachment)
+            .filter(
+                ActiveStorageAttachment.record_type == "Comment",
+                ActiveStorageAttachment.record_id == comment_id,
+                ActiveStorageAttachment.name == "photos",
+            )
+            .all()
+        )
+
+        for attachment in attachments:
+            db.add(
+                ActiveStorageAttachment(
+                    name="photos",
+                    record_type="Violation",
+                    record_id=violation.id,
+                    blob_id=attachment.blob_id,
+                    created_at=datetime.utcnow(),
+                )
+            )
+
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        logging.exception("Failed to create violation from comment %s: %s", comment_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to create violation from comment")
+
+    db.refresh(violation)
+    return violation
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
