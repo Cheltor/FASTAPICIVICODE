@@ -7,6 +7,7 @@ from typing import List, Optional, Union
 from models import Comment, ContactComment, ActiveStorageAttachment, ActiveStorageBlob, User, Unit, Contact, CommentContactLink, Mention
 from schemas import (
     CommentCreate,
+    CommentReviewUpdate,
     CommentResponse,
     ContactCommentCreate,
     ContactCommentResponse,
@@ -196,6 +197,7 @@ def _build_comment_response(db: Session, comment: Comment) -> CommentResponse:
         contact_mentions=[ContactResponse.from_orm(c) for c in contact_mentions] if contact_mentions else None,
         created_at=comment.created_at,
         updated_at=comment.updated_at,
+        review_later=bool(getattr(comment, "review_later", False)),
     )
 
 router = APIRouter()
@@ -296,6 +298,26 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
 SECRET_KEY = "trpdds2020"
 ALGORITHM = "HS256"
 
+def _require_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = int(payload.get("sub"))
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid auth token")
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+
+def _coerce_bool(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
 def _require_admin(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
@@ -393,8 +415,46 @@ def get_comments(skip: int = 0, limit: int = 200, db: Session = Depends(get_db))
             contact_mentions=[ContactResponse.from_orm(ct) for ct in contact_mentions] if contact_mentions else None,
             created_at=c.created_at,
             updated_at=c.updated_at,
+            review_later=bool(getattr(c, "review_later", False)),
         ))
     return results
+
+# Comments flagged for later review
+@router.get("/comments/review-later", response_model=List[CommentResponse])
+def get_review_later_comments(
+    limit: int = Query(20, ge=1, le=200),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(_require_user),
+):
+    comments = (
+        db.query(Comment)
+        .filter(Comment.review_later.is_(True))
+        .filter(Comment.user_id == current_user.id)
+        .order_by(Comment.updated_at.desc())
+        .limit(limit)
+        .all()
+    )
+    if not comments:
+        return []
+    return [_build_comment_response(db, comment) for comment in comments]
+
+
+@router.patch("/comments/{comment_id}/review", response_model=CommentResponse)
+def set_comment_review_later(
+    comment_id: int,
+    payload: CommentReviewUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(_require_user),
+):
+    comment = db.query(Comment).filter(Comment.id == comment_id).first()
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    if int(comment.user_id) != int(current_user.id):
+        raise HTTPException(status_code=403, detail="You can only update your own comments")
+    comment.review_later = bool(payload.review_later)
+    db.commit()
+    db.refresh(comment)
+    return _build_comment_response(db, comment)
 
 # Get all contact comments (admin list)
 @router.get("/comments/contact/", response_model=List[ContactCommentResponse])
@@ -648,10 +708,17 @@ async def create_address_comment(
     unit_id: Optional[int] = Form(None),
     mentioned_user_ids: Optional[str] = Form(None),
     mentioned_contact_ids: Optional[str] = Form(None),
+    review_later: Optional[bool] = Form(False),
     files: List[UploadFile] = File([]),
     db: Session = Depends(get_db),
 ):
-    new_comment = Comment(content=content, user_id=user_id, address_id=address_id, unit_id=unit_id)
+    new_comment = Comment(
+        content=content,
+        user_id=user_id,
+        address_id=address_id,
+        unit_id=unit_id,
+        review_later=_coerce_bool(review_later),
+    )
     db.add(new_comment)
     db.commit()
     db.refresh(new_comment)
@@ -750,6 +817,7 @@ async def create_address_comment(
         contact_mentions=[ContactResponse.from_orm(c) for c in contact_mentions] if contact_mentions else None,
         created_at=new_comment.created_at,
         updated_at=new_comment.updated_at,
+        review_later=bool(getattr(new_comment, "review_later", False)),
     )
     
 # Create a new comment for a Contact, with optional file attachments
@@ -959,7 +1027,8 @@ def get_comments_by_unit(unit_id: int, db: Session = Depends(get_db)):
                 updated_at=unit.updated_at
             ) if unit else None,
             created_at=comment.created_at,
-            updated_at=comment.updated_at
+            updated_at=comment.updated_at,
+            review_later=bool(getattr(comment, "review_later", False)),
         ))
     return comment_responses
 
@@ -1073,6 +1142,7 @@ async def create_unit_comment(
         contact_mentions=[ContactResponse.from_orm(c) for c in contact_mentions] if contact_mentions else None,
         created_at=new_comment.created_at,
         updated_at=new_comment.updated_at,
+        review_later=bool(getattr(new_comment, "review_later", False)),
     )
 
 # Update a unit comment (admin-only)

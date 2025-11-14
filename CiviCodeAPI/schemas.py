@@ -237,10 +237,14 @@ class CommentBase(BaseModel):
     user_id: int
     address_id: int  # Address ID is required
     unit_id: Optional[int] = None  # Unit ID is optional
+    review_later: bool = False
 
 # Schema for creating a new comment (doesn't include id, created_at, updated_at)
 class CommentCreate(CommentBase):
     pass  # Inherit all fields from CommentBase for creation
+
+class CommentReviewUpdate(BaseModel):
+    review_later: bool
 
 # Schema for returning comment data in API responses
 class CommentResponse(CommentBase):

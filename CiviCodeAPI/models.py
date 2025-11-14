@@ -1,4 +1,4 @@
-﻿from sqlalchemy import Column, Integer, String, Boolean, Float, DateTime, ForeignKey, Text, BigInteger, Date, func, UniqueConstraint
+from sqlalchemy import Column, Integer, String, Boolean, Float, DateTime, ForeignKey, Text, BigInteger, Date, func, UniqueConstraint, text
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime, timedelta
@@ -279,6 +279,7 @@ class Comment(Base):
     address_id = Column(BigInteger, ForeignKey('addresses.id'), nullable=False)
     user_id = Column(BigInteger, ForeignKey('users.id'), nullable=False)
     unit_id = Column(BigInteger, ForeignKey('units.id'), nullable=True)
+    review_later = Column(Boolean, nullable=False, default=False, server_default=text('0'))
     created_at = Column(DateTime, default=func.now(), nullable=False)
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
 
