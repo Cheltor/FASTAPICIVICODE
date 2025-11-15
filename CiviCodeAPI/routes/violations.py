@@ -13,7 +13,7 @@ from fastapi import (
 from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional
 from azure.storage.blob import generate_blob_sas, BlobSasPermissions
-from models import Violation, Citation, ActiveStorageAttachment, ActiveStorageBlob, User, Notification
+from models import Violation, Citation, ActiveStorageAttachment, ActiveStorageBlob, User, Notification, Case
 from email_service import send_notification_email
 import schemas
 from database import get_db
@@ -117,6 +117,21 @@ def create_violation(violation: schemas.ViolationCreate, db: Session = Depends(g
     # Always set status to 0 (current) if not provided
     if not violation_data.get("status"):
         violation_data["status"] = 0
+
+    # Handle case creation
+    if not violation.case_id:
+        case = Case(
+            address_id=violation.address_id,
+            user_id=violation.user_id,
+            status="Violation Confirmed",
+        )
+        db.add(case)
+        db.commit()
+        db.refresh(case)
+        violation_data["case_id"] = case.id
+        case.case_number = f"V-{case.id}"
+        db.commit()
+
     new_violation = Violation(**violation_data)
     db.add(new_violation)
     db.commit()
@@ -617,6 +632,3 @@ async def upload_violation_photos(
             continue
 
     return {"uploaded": uploaded}
-
-
-

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends, status, UploadFile, File, Form
 from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional
-from models import Inspection, Contact, Address, Area, Room, Prompt, Observation, Photo, ActiveStorageAttachment, ActiveStorageBlob, License, Permit, Violation, User, Notification, InspectionComment
+from models import Inspection, Contact, Address, Area, Room, Prompt, Observation, Photo, ActiveStorageAttachment, ActiveStorageBlob, License, Permit, Violation, User, Notification, InspectionComment, Case
 from schemas import InspectionResponse, ContactResponse, AddressResponse, AreaResponse, AreaCreate, RoomResponse, RoomCreate, PromptCreate, PromptResponse, ObservationCreate, ObservationResponse, ObservationUpdate
 from schemas import InspectionResponse, ContactResponse, AddressResponse, AreaResponse, AreaCreate, RoomResponse, RoomCreate, PromptCreate, PromptResponse, ObservationCreate, ObservationResponse, PotentialObservationResponse
 # add import for inspection comment schemas
@@ -261,9 +261,23 @@ async def create_inspection(
     paid: bool = Form(False),
     inspector_id: Optional[int] = Form(None),
     business_id: Optional[int] = Form(None),
+    case_id: Optional[int] = Form(None),
     db: Session = Depends(get_db),
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
+    if not case_id:
+        case = Case(
+            address_id=address_id,
+            user_id=inspector_id,
+            status="Received",
+        )
+        db.add(case)
+        db.commit()
+        db.refresh(case)
+        case_id = case.id
+        case.case_number = f"I-{case.id}"
+        db.commit()
+
     new_inspection = Inspection(
         address_id=address_id,
         unit_id=unit_id,
@@ -273,6 +287,7 @@ async def create_inspection(
         paid=paid,
         inspector_id=inspector_id,
         business_id=business_id,
+        case_id=case_id,
     )
     db.add(new_inspection)
     db.commit()
@@ -1210,5 +1225,3 @@ def create_inspection_comment(
     except Exception:
         # Fallback: return raw ORM object if building the response fails
         return comment
-
-
