@@ -1,3 +1,4 @@
+from __future__ import annotations
 from pydantic import BaseModel, validator, Field
 from typing import Optional, List
 from datetime import datetime, date
@@ -174,6 +175,45 @@ class ContactDetailResponse(ContactResponse):
     permits: List[PermitSummary] = Field(default_factory=list)
     complaints: List[InspectionSummary] = Field(default_factory=list)
 
+# Pydantic schema for Case
+class CaseBase(BaseModel):
+    case_number: Optional[str] = None
+    status: Optional[str] = None
+    address_id: int
+    user_id: Optional[int] = None
+
+class CaseCreate(CaseBase):
+    pass
+
+class CaseResponse(CaseBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+    violations: Optional[List['ViolationResponse']] = []
+    inspections: Optional[List['InspectionResponse']] = []
+    comments: Optional[List['CaseCommentResponse']] = []
+
+    class Config:
+        from_attributes = True
+
+# Pydantic schema for CaseComment
+class CaseCommentBase(BaseModel):
+    content: str
+    case_id: int
+    user_id: int
+    attachments: Optional[str] = None
+
+class CaseCommentCreate(CaseCommentBase):
+    pass
+
+class CaseCommentResponse(CaseCommentBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
 # Pydantic schema for Violations
 class ViolationBase(BaseModel):
     description: Optional[str] = None
@@ -187,6 +227,7 @@ class ViolationBase(BaseModel):
     inspection_id: Optional[int] = None
     business_id: Optional[int] = None
     comment: Optional[str] = None
+    case_id: Optional[int] = None
 
     @validator('deadline')
     def validate_deadline(cls, value):
@@ -227,6 +268,7 @@ class ViolationResponse(ViolationBase):
     codes: Optional[List['CodeResponse']] = None
     violation_comments: Optional[List['ViolationCommentResponse']] = None
     user: Optional[UserResponse] = None  # <-- Add this line
+    case_id: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -313,6 +355,7 @@ class InspectionBase(BaseModel):
     unit_id: Optional[int] = None
     business_id: Optional[int] = None
     description: Optional[str] = None
+    case_id: Optional[int] = None
 
 class InspectionCreate(InspectionBase):
     pass
@@ -334,6 +377,7 @@ class InspectionResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     status_message: Optional[str] = None  # ephemeral message about side-effects (e.g., license creation)
+    case_id: Optional[int] = None
 
     class Config:
         from_attributes = True

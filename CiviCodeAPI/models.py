@@ -206,6 +206,43 @@ class BusinessContact(Base):
     contact = relationship("Contact", back_populates="business_associations", overlaps="businesses,contacts")
 
 
+# Cases
+class Case(Base):
+    __tablename__ = "cases"
+
+    id = Column(BigInteger, primary_key=True, index=True)
+    case_number = Column(String, unique=True)
+    status = Column(String)
+    address_id = Column(BigInteger, ForeignKey('addresses.id'), nullable=False)
+    user_id = Column(BigInteger, ForeignKey('users.id'))
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+
+    # Relationships
+    address = relationship("Address", backref="cases")
+    user = relationship("User", backref="cases")
+    violations = relationship("Violation", back_populates="case")
+    inspections = relationship("Inspection", back_populates="case")
+    comments = relationship("CaseComment", back_populates="case", cascade="all, delete-orphan")
+
+
+# CaseComments
+class CaseComment(Base):
+    __tablename__ = "case_comments"
+
+    id = Column(BigInteger, primary_key=True, index=True)
+    content = Column(Text, nullable=False)
+    case_id = Column(BigInteger, ForeignKey('cases.id'), nullable=False)
+    user_id = Column(BigInteger, ForeignKey('users.id'), nullable=False)
+    attachments = Column(String)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+
+    # Relationships
+    case = relationship("Case", back_populates="comments")
+    user = relationship("User", backref="case_comments")
+
+
 # Citations
 class Citation(Base):
     __tablename__ = "citations"
@@ -416,9 +453,11 @@ class Inspection(Base):
     business_id = Column(BigInteger, ForeignKey('businesses.id'))
     start_time = Column(DateTime)
     paid = Column(Boolean, default=False, nullable=False)
+    case_id = Column(BigInteger, ForeignKey('cases.id'))
 
     # Relationships
     address = relationship("Address", back_populates="inspections")
+    case = relationship("Case", back_populates="inspections")
     inspector = relationship("User", back_populates="inspections")
     contact = relationship("Contact", back_populates="inspections")
     areas = relationship("Area", back_populates="inspection", cascade="all, delete-orphan")  # Inspection has many Areas
@@ -670,10 +709,12 @@ class Violation(Base):
     business_id = Column(BigInteger)
     created_at = Column(DateTime, default=func.now(), nullable=False)  # Auto-generate created_at timestamp
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)  # Auto-update updated_at timestamp
+    case_id = Column(BigInteger, ForeignKey('cases.id'))
 
 
     # Relationships
     address = relationship("Address", back_populates="violations") # Violation belongs to an Address
+    case = relationship("Case", back_populates="violations")
     citations = relationship("Citation", back_populates="violation") # Violation has many Citations
     codes = relationship(
         "Code",
