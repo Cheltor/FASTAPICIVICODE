@@ -95,18 +95,30 @@ except OperationalError as exc:
     ) from exc
 
 
-def override_get_db():
-    db = TestingSessionLocal()
+@pytest.fixture(scope="function")
+def db_session():
+    """Yield a new database session for a single test."""
+    connection = engine.connect()
+    transaction = connection.begin()
+    session = TestingSessionLocal(bind=connection)
     try:
-        yield db
+        yield session
     finally:
-        db.close()
+        session.close()
+        transaction.rollback()
+        connection.close()
 
 
-app.dependency_overrides[get_db] = override_get_db
+@pytest.fixture(scope="function")
+def test_client(db_session):
+    """Yield a test client that uses a clean database transaction."""
 
+    def override_get_db():
+        try:
+            yield db_session
+        finally:
+            pass
 
-@pytest.fixture(scope="module")
-def test_client():
+    app.dependency_overrides[get_db] = override_get_db
     with TestClient(app) as client:
         yield client

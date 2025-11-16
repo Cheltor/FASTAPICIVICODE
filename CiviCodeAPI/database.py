@@ -27,19 +27,16 @@ _load_env()
 
 
 def _database_url() -> str:
-    """Resolve the database URL from environment with Heroku-friendly defaults."""
-    url = (
-        os.getenv("DATABASE_URL")
-        or os.getenv("HEROKU_DATABASE_URL")
-        or "postgresql://rchelton:password@localhost:5433/codeenforcement_development"
-    )
-    # Normalize Heroku's postgres:// to SQLAlchemy's expected scheme
+    """Resolve the database URL from the environment."""
+    url = os.getenv("DATABASE_URL")
+    if not url:
+        # Fallback for local development if a .env file is not present.
+        url = "postgresql://rchelton:password@localhost:5433/codeenforcement_development"
+
+    # Normalize postgres:// scheme for SQLAlchemy compatibility.
     if url.startswith("postgres://"):
-        url = url.replace("postgres://", "postgresql+psycopg2://", 1)
-    # Force SSL on Heroku dynos if not specified
-    if os.getenv("DYNO") and "sslmode=" not in url:
-        sep = "&" if "?" in url else "?"
-        url = f"{url}{sep}sslmode=require"
+        url = url.replace("postgres://", "postgresql://", 1)
+
     return url
 
 
