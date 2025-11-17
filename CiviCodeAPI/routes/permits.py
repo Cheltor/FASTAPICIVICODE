@@ -65,6 +65,47 @@ def get_permit(permit_id: int, db: Session = Depends(get_db)):
     return data
 
 
+# Return permits for a given address (via inspections at that address).
+# Important: if there are no permits for the address, return an empty list (200), not a 404.
+@router.get("/permits/address/{address_id}", response_model=List[PermitResponse])
+def get_permits_by_address(address_id: int, db: Session = Depends(get_db)):
+    # Find all inspection ids for this address
+    insp_rows = db.query(Inspection.id).filter(Inspection.address_id == address_id).all()
+    insp_ids = [r.id for r in insp_rows]
+
+    # If there are no inspections (or none), return empty list rather than 404
+    if not insp_ids:
+        return []
+
+    # Query permits whose inspection_id is one of the inspections for this address
+    permits = (
+        db.query(Permit)
+        .filter(Permit.inspection_id.in_(insp_ids))
+        .order_by(Permit.created_at.desc())
+        .all()
+    )
+
+    if not permits:
+        return []
+
+    # Fetch inspection -> address context (combadd)
+    inspections = (
+        db.query(Inspection.id, Inspection.address_id, Address.combadd)
+        .join(Address, Address.id == Inspection.address_id)
+        .filter(Inspection.id.in_(insp_ids))
+        .all()
+    )
+    insp_map = {row.id: {"address_id": row.address_id, "combadd": row.combadd} for row in inspections}
+
+    augmented = []
+    for p in permits:
+        base = {k: getattr(p, k) for k in p.__dict__ if not k.startswith('_')}
+        extra = insp_map.get(p.inspection_id, {})
+        base.update(extra)
+        augmented.append(base)
+    return augmented
+
+
 @router.put("/permits/{permit_id}", response_model=PermitResponse)
 def update_permit(permit_id: int, permit_in: PermitUpdate, db: Session = Depends(get_db)):
     permit = db.query(Permit).filter(Permit.id == permit_id).first()
