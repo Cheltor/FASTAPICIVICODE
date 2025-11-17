@@ -14,7 +14,7 @@ else:
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
-from routes import addresses_router, users_router, businesses_router, contacts_router, violations_router, comments_router, citations_router, inspections_router, codes_router, codes_sync_mvp_router, licenses_router, dashboard_router, permits_router, sir_router, notifications_router, assistant_router, settings_router, word_templates  # Updated import
+from routes import addresses, users, businesses, contacts, violations, comments, citations, inspections, codes, codes_sync_mvp, licenses, dashboard, permits, sir, notifications, assistant, settings, word_templates, cases
 from database import engine, Base
 import uvicorn
 
@@ -34,58 +34,61 @@ app = FastAPI(lifespan=lifespan)
 Base.metadata.create_all(bind=engine)
 
 # Include the address routes from routes.py
-app.include_router(addresses_router)
+app.include_router(addresses.router)
 
 # Include the user routes from routes.py
-app.include_router(users_router)
+app.include_router(users.router)
 
 # Include the business routes from routes.py
-app.include_router(businesses_router)
+app.include_router(businesses.router)
 
 # Include the contact routes from routes.py
-app.include_router(contacts_router)
+app.include_router(contacts.router)
 
 # Include the violation routes from routes.py
-app.include_router(violations_router)
+app.include_router(violations.router)
 
 # Include the comment routes from routes.py
-app.include_router(comments_router)
+app.include_router(comments.router)
 
 # Include the citation routes from routes.py
-app.include_router(citations_router)
+app.include_router(citations.router)
 
 # Include the inspection routes from routes.py
-app.include_router(inspections_router)
+app.include_router(inspections.router)
 
 # Include the code routes from routes.py
-app.include_router(codes_router)
+app.include_router(codes.router)
 
 # Include the code sync MVP routes
-app.include_router(codes_sync_mvp_router)
+app.include_router(codes_sync_mvp.router)
 
 # Include the licecnse routes from routes.py
-app.include_router(licenses_router)
+app.include_router(licenses.router)
 
 # Include the dashboard routes from routes.py
-app.include_router(dashboard_router)
+app.include_router(dashboard.router)
 
 # Include the permit routes from routes.py
-app.include_router(permits_router)
+app.include_router(permits.router)
 
 # Include the word template routes from routes.py
 app.include_router(word_templates.router)  # Registered the router
 
 # Include SIR stats routes
-app.include_router(sir_router)
+app.include_router(sir.router)
 
 # Include notifications routes
-app.include_router(notifications_router)
+app.include_router(notifications.router)
 
 # Include assistant chat routes
-app.include_router(assistant_router)
+app.include_router(assistant.router)
 
 # Include settings routes
-app.include_router(settings_router)
+app.include_router(settings.router)
+
+# Include cases routes
+app.include_router(cases.router)
 
 # CORS middleware
 app.add_middleware(
