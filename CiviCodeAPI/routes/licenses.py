@@ -55,6 +55,47 @@ def get_license(license_id: int, db: Session = Depends(get_db)):
     data['address_id'] = address_id
     return data
 
+
+# Return licenses for a given address (via inspections at that address).
+# Important: if there are no licenses for the address, return an empty list (200), not a 404.
+@router.get("/licenses/address/{address_id}", response_model=List[LicenseResponse])
+def get_licenses_by_address(address_id: int, db: Session = Depends(get_db)):
+    # Find all inspection ids for this address
+    insp_rows = db.query(Inspection.id).filter(Inspection.address_id == address_id).all()
+    insp_ids = [r.id for r in insp_rows]
+
+    # If there are no inspections (or none), return empty list rather than 404
+    if not insp_ids:
+        return []
+
+    # Query licenses whose inspection_id is one of the inspections for this address
+    licenses = (
+        db.query(License)
+        .filter(License.inspection_id.in_(insp_ids))
+        .order_by(License.created_at.desc())
+        .all()
+    )
+
+    if not licenses:
+        return []
+
+    # Fetch inspection -> address context (combadd)
+    inspections = (
+        db.query(Inspection.id, Inspection.address_id, Address.combadd)
+        .join(Address, Address.id == Inspection.address_id)
+        .filter(Inspection.id.in_(insp_ids))
+        .all()
+    )
+    insp_map = {row.id: {"address_id": row.address_id, "combadd": row.combadd} for row in inspections}
+
+    augmented = []
+    for lic in licenses:
+        base = {k: getattr(lic, k) for k in lic.__dict__ if not k.startswith('_')}
+        extra = insp_map.get(lic.inspection_id, {})
+        base.update(extra)
+        augmented.append(base)
+    return augmented
+
 @router.post("/licenses/", response_model=LicenseResponse)
 def create_license(license_in: LicenseCreate, db: Session = Depends(get_db)):
     # avoid duplicate for same inspection
