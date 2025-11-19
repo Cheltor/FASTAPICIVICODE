@@ -6,9 +6,10 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, status, Depends
 from pydantic import AliasChoices, BaseModel, Field
 
+from code_search import search_codes
 from genai_client import OpenAIConfigError, run_assistant
 from .auth import get_current_user
-from models import User
+from models import User, Code
 from sqlalchemy.orm import Session
 from database import get_db
 from models import ChatLog
@@ -32,11 +33,16 @@ class AssistantChatResponse(BaseModel):
     thread_id: str = Field(serialization_alias="threadId")
 
 
+import os
+
 @router.post("/chat", response_model=AssistantChatResponse)
 async def create_assistant_chat(payload: AssistantChatRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> AssistantChatResponse:
     """Proxy user messages to the configured OpenAI assistant."""
+    # Search for relevant codes
+    codes = search_codes(db, payload.message)
+
     try:
-        reply, thread_id = await run_assistant(payload.message, payload.thread_id)
+        reply, thread_id = await run_assistant(payload.message, payload.thread_id, codes)
     except OpenAIConfigError as exc:
         logger.error("OpenAI configuration error: %s", exc)
         raise HTTPException(
