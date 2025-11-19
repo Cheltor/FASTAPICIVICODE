@@ -93,18 +93,18 @@ async def _poll_run(thread_id: str, run_id: str, *, poll_interval: float, timeou
 async def run_assistant(
     message: str,
     thread_id: Optional[str] = None,
+    codes: list = None,
     *,
     poll_interval: float = 0.75,
     timeout: float = 30.0,
 ) -> Tuple[str, str]:
     """Send a user message to the configured OpenAI assistant and return the reply.
-
     Args:
         message: The user's message.
         thread_id: Optional existing thread identifier. A new thread is created if omitted.
+        codes: A list of relevant code objects to include in the prompt.
         poll_interval: Seconds between status polls for the run.
         timeout: Maximum seconds to wait for completion (0 disables timeout).
-
     Returns:
         A tuple of (assistant_reply, thread_id).
     """
@@ -118,15 +118,31 @@ async def run_assistant(
     try:
         thread = await _resolve_thread(thread_id)
 
+        # Prepare the content with code references if available
+        content = message
+        if codes:
+            code_references = "\n\nHere are some relevant code sections:\n"
+            for code in codes:
+                code_references += f"- **[{code.chapter}.{code.section} - {code.name}]**\n"
+            content += code_references
+
         await client.beta.threads.messages.create(
             thread_id=thread,
             role="user",
-            content=message,
+            content=content,
+        )
+
+        # Include instructions for the assistant in the run
+        instructions = (
+            "Please answer the user's question. If relevant, use the provided code sections "
+            "and cite them in your response using the format `[chapter.section - name]`."
+            "If you cannot find a relevant code section, please state that you couldn't find any."
         )
 
         run = await client.beta.threads.runs.create(
             thread_id=thread,
             assistant_id=assistant_id,
+            instructions=instructions,
         )
 
         await _poll_run(thread, run.id, poll_interval=poll_interval, timeout=timeout)
