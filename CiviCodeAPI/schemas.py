@@ -227,6 +227,7 @@ class ViolationResponse(ViolationBase):
     codes: Optional[List['CodeResponse']] = None
     violation_comments: Optional[List['ViolationCommentResponse']] = None
     user: Optional[UserResponse] = None  # <-- Add this line
+    unit: Optional['UnitResponse'] = None
 
     class Config:
         from_attributes = True
@@ -553,6 +554,18 @@ class UnitResponse(UnitBase):
     class Config:
         from_attributes = True
 
+
+# Response schema for per-unit aggregated alert counts
+class UnitAlertCountsResponse(BaseModel):
+    unit_id: int
+    unit_number: Optional[str] = None
+    pending_inspections: int = 0
+    open_violations: int = 0
+    unpaid_citations: int = 0
+
+    class Config:
+        from_attributes = True
+
 # Pydantic schema for Rooms
 class RoomBase(BaseModel):
     name: str
@@ -691,3 +704,15 @@ class NotificationResponse(NotificationBase):
 
     class Config:
         from_attributes = True
+
+
+# Resolve forward references for any cross-referenced schemas (helps Pydantic resolve string annotations)
+try:
+    ViolationResponse.update_forward_refs()
+    CodeResponse.update_forward_refs()
+    UnitResponse.update_forward_refs()
+    ViolationCommentResponse.update_forward_refs()
+    CommentResponse.update_forward_refs()
+except Exception:
+    # If any models are not yet defined at import time, it's okay — Pydantic will resolve when used.
+    pass

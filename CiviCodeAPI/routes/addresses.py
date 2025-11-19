@@ -1,14 +1,14 @@
 
 from fastapi import APIRouter, HTTPException, Depends, Query, Body
 from fastapi.security import OAuth2PasswordBearer
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional
 from sqlalchemy import or_, func
 from sqlalchemy.exc import IntegrityError
 from storage import blob_service_client, CONTAINER_NAME
 from media_service import ensure_blob_browser_safe
 from database import get_db  # Ensure get_db is imported before use
-from models import Address, Comment, Violation, Inspection, Unit, ActiveStorageAttachment, ActiveStorageBlob, Contact, AddressContact, User
+from models import Address, Comment, Violation, Inspection, Unit, Citation, ActiveStorageAttachment, ActiveStorageBlob, Contact, AddressContact, User
 import models
 from schemas import (
     AddressCreate,
@@ -26,6 +26,8 @@ from schemas import (
     SDATRefreshRequest,
     SDATRefreshResponse,
 )
+
+import schemas
 
 from sdat_client import fetch_owner_info
 
@@ -400,11 +402,38 @@ def delete_address_comment(address_id: int, comment_id: int, db: Session = Depen
 # Show the violations for the address
 @router.get("/addresses/{address_id}/violations", response_model=List[ViolationResponse])
 def get_address_violations(address_id: int, db: Session = Depends(get_db)):
-    # Query the violations for the given address ID and order by created_at descending
-    violations = db.query(Violation).filter(Violation.address_id == address_id).order_by(Violation.created_at.desc()).all()
+    # Query violations that are either directly attached to the address OR attached to a Unit that belongs to the address.
+    # Eager-load related Unit, Address and Codes so the response includes unit information without additional queries.
+    violations_query = (
+        db.query(Violation)
+        .outerjoin(Unit, Violation.unit_id == Unit.id)
+        .options(joinedload(Violation.unit), joinedload(Violation.codes), joinedload(Violation.address))
+        .filter(or_(Violation.address_id == address_id, Unit.address_id == address_id))
+        .order_by(Violation.created_at.desc())
+    )
+
+    violations = violations_query.all()
     if not violations:
         raise HTTPException(status_code=404, detail="No violations found for this address")
-    return violations
+
+    # Build response dicts to include combadd, deadline_date, codes and unit info
+    response = []
+    for violation in violations:
+        violation_dict = violation.__dict__.copy()
+        violation_dict['combadd'] = violation.address.combadd if violation.address else None
+        try:
+            violation_dict['deadline_date'] = violation.deadline_date
+        except Exception:
+            violation_dict['deadline_date'] = None
+        violation_dict['codes'] = violation.codes
+        violation_dict['user'] = None
+        if getattr(violation, 'user', None):
+            violation_dict['user'] = violation.user
+        # Include unit info if present
+        violation_dict['unit'] = getattr(violation, 'unit', None)
+        response.append(violation_dict)
+
+    return response
 
 # Add a violation to the address
 
@@ -593,6 +622,63 @@ def get_units_by_address_id(address_id: int, db: Session = Depends(get_db)):
     if not units:
         raise HTTPException(status_code=404, detail="No units found for this address")
     return units
+
+
+# Return per-unit aggregated alert counts for an address to avoid many client-side requests
+@router.get("/addresses/{address_id}/unit_alert_counts", response_model=List[schemas.UnitAlertCountsResponse])
+def get_unit_alert_counts(address_id: int, db: Session = Depends(get_db)):
+    # Ensure the address exists
+    address = db.query(Address).filter(Address.id == address_id).first()
+    if not address:
+        raise HTTPException(status_code=404, detail="Address not found")
+
+    units = db.query(Unit).filter(Unit.address_id == address_id).all()
+    if not units:
+        return []
+
+    unit_ids = [u.id for u in units]
+
+    # Open violations grouped by unit (status == 0 considered open/current)
+    violation_rows = (
+        db.query(Violation.unit_id, func.count(Violation.id))
+        .filter(Violation.unit_id.in_(unit_ids), Violation.status == 0)
+        .group_by(Violation.unit_id)
+        .all()
+    )
+    violation_map = {row[0]: row[1] for row in violation_rows}
+
+    # Pending inspections grouped by unit - approximate using keywords similar to frontend
+    pending_keywords = ['%pending%', '%scheduled%', '%open%', '%in progress%', '%in-progress%', '%awaiting%', '%requested%', '%draft%']
+    inspection_conditions = [Inspection.status == None]
+    inspection_conditions += [Inspection.status.ilike(k) for k in pending_keywords]
+    inspection_rows = (
+        db.query(Inspection.unit_id, func.count(Inspection.id))
+        .filter(Inspection.unit_id.in_(unit_ids), Inspection.source != 'Complaint', or_(*inspection_conditions))
+        .group_by(Inspection.unit_id)
+        .all()
+    )
+    inspection_map = {row[0]: row[1] for row in inspection_rows}
+
+    # Unpaid citations grouped by unit (status == 0 or NULL considered unpaid)
+    citation_rows = (
+        db.query(Citation.unit_id, func.count(Citation.id))
+        .filter(Citation.unit_id.in_(unit_ids), or_(Citation.status == 0, Citation.status == None))
+        .group_by(Citation.unit_id)
+        .all()
+    )
+    citation_map = {row[0]: row[1] for row in citation_rows}
+
+    results = []
+    for u in units:
+        results.append({
+            'unit_id': u.id,
+            'unit_number': u.number,
+            'pending_inspections': int(inspection_map.get(u.id, 0)),
+            'open_violations': int(violation_map.get(u.id, 0)),
+            'unpaid_citations': int(citation_map.get(u.id, 0)),
+        })
+
+    return results
 
 # Get all photos from comments for a specific address
 @router.get("/addresses/{address_id}/photos", response_model=List[dict])

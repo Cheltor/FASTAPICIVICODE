@@ -348,6 +348,8 @@ class Unit(Base):
     # Relationships
     areas = relationship("Area", back_populates="unit")  # Unit has many Areas
     comments = relationship("Comment", back_populates="unit")  # Unit has many Comments
+    # Unit has many Violations
+    violations = relationship("Violation", back_populates="unit")
 
 # InspectionCodes
 class InspectionCode(Base):
@@ -682,6 +684,8 @@ class Violation(Base):
     )
     violation_comments = relationship("ViolationComment", backref="violation", cascade="all, delete-orphan") # Violation has many ViolationComments
     user = relationship("User")  # Add this line to enable joinedload and access to user
+    # Relationship to Unit (optional)
+    unit = relationship("Unit", back_populates="violations")
 
     def deadline_passed(self) -> bool:
         """Determine if the deadline has passed."""

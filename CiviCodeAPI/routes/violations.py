@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional
 from azure.storage.blob import generate_blob_sas, BlobSasPermissions
 from models import Violation, Citation, ActiveStorageAttachment, ActiveStorageBlob, User, Notification
+from sqlalchemy import or_
 from email_service import send_notification_email
 import schemas
 from database import get_db
@@ -58,6 +59,7 @@ def get_violations(
     status: Optional[str] = Query(None),
     assigned_user_id: Optional[int] = Query(None),
     user_email: Optional[str] = Query(None),
+    unit_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
 ):
     query = db.query(Violation)
@@ -72,6 +74,9 @@ def get_violations(
         query = query.filter(Violation.user_id == assigned_user_id)
     elif user_email:
         query = query.join(Violation.user).filter(User.email == user_email)
+    # Filter by unit if provided (supports frontend requests like /violations?unit_id=123)
+    if unit_id is not None:
+        query = query.filter(Violation.unit_id == unit_id)
 
     total = query.count()
 
@@ -189,14 +194,31 @@ def get_violation(violation_id: int, db: Session = Depends(get_db)):
 # Get all violations for a specific Address
 @router.get("/violations/address/{address_id}", response_model=List[schemas.ViolationResponse])
 def get_violations_by_address(address_id: int, db: Session = Depends(get_db)):
-    violations = db.query(Violation).options(joinedload(Violation.codes)).filter(Violation.address_id == address_id).all()
-    # Add codes and deadline_date to the response
+    # Return violations either directly on the address or attached to units belonging to the address
+    from models import Unit
+
+    violations_query = (
+        db.query(Violation)
+        .outerjoin(Unit, Violation.unit_id == Unit.id)
+        .options(joinedload(Violation.codes), joinedload(Violation.unit), joinedload(Violation.address))
+        .filter(or_(Violation.address_id == address_id, Unit.address_id == address_id))
+        .order_by(Violation.created_at.desc())
+    )
+
+    violations = violations_query.all()
+
+    # Build response list including codes, deadline_date and unit info
     response = []
     for violation in violations:
         violation_dict = violation.__dict__.copy()
         violation_dict['codes'] = violation.codes
-        violation_dict['deadline_date'] = violation.deadline_date  # Ensure this computed property is included
+        try:
+            violation_dict['deadline_date'] = violation.deadline_date
+        except Exception:
+            violation_dict['deadline_date'] = None
+        violation_dict['unit'] = getattr(violation, 'unit', None)
         response.append(violation_dict)
+
     return response
 
 # Show all citations for a specific Violation
