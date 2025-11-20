@@ -6,7 +6,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, status, Depends
 from pydantic import AliasChoices, BaseModel, Field
 
-from genai_client import OpenAIConfigError, run_assistant
+from genai_client import GeminiConfigError, run_assistant
 from .auth import get_current_user
 from models import User
 from sqlalchemy.orm import Session
@@ -34,11 +34,11 @@ class AssistantChatResponse(BaseModel):
 
 @router.post("/chat", response_model=AssistantChatResponse)
 async def create_assistant_chat(payload: AssistantChatRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> AssistantChatResponse:
-    """Proxy user messages to the configured OpenAI assistant."""
+    """Proxy user messages to the configured AI assistant."""
     try:
-        reply, thread_id = await run_assistant(payload.message, payload.thread_id)
-    except OpenAIConfigError as exc:
-        logger.error("OpenAI configuration error: %s", exc)
+        reply, thread_id = await run_assistant(payload.message, payload.thread_id, db)
+    except GeminiConfigError as exc:
+        logger.error("Gemini configuration error: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Chat assistant is not configured.",
