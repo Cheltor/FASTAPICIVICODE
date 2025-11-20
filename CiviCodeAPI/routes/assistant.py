@@ -32,7 +32,7 @@ class AssistantChatResponse(BaseModel):
     thread_id: str = Field(serialization_alias="threadId")
 
 
-@router.post("/chat", response_model=AssistantChatResponse)
+@router.post("/assistant/chat", response_model=AssistantChatResponse)
 async def create_assistant_chat(payload: AssistantChatRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> AssistantChatResponse:
     """Proxy user messages to the configured AI assistant."""
     try:
@@ -71,3 +71,49 @@ async def create_assistant_chat(payload: AssistantChatRequest, current_user: Use
         logger.exception('Failed to persist chat log')
 
     return AssistantChatResponse(reply=reply, thread_id=thread_id)
+
+
+from fastapi import UploadFile, File
+from genai_client import evaluate_image_for_violation
+import json
+
+@router.post("/assistant/evaluate-image")
+async def evaluate_image(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Evaluate an uploaded image for potential code violations.
+    """
+    if not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="File must be an image.")
+        
+    try:
+        content = await file.read()
+        result_json_str = await evaluate_image_for_violation(content, file.content_type, db)
+        
+        # Try to parse the JSON to ensure it's valid, otherwise return as raw text wrapped in a structure
+        try:
+            # Cleanup markdown code blocks if present
+            cleaned_result = result_json_str.strip()
+            if cleaned_result.startswith("```json"):
+                cleaned_result = cleaned_result[7:]
+            if cleaned_result.startswith("```"):
+                cleaned_result = cleaned_result[3:]
+            if cleaned_result.endswith("```"):
+                cleaned_result = cleaned_result[:-3]
+            
+            data = json.loads(cleaned_result.strip())
+            return data
+        except json.JSONDecodeError:
+            # Fallback if the model didn't return strict JSON
+            return {
+                "observation": "Analysis completed but format was unstructured.",
+                "raw_output": result_json_str,
+                "potential_violations": []
+            }
+            
+    except Exception as e:
+        logger.exception("Failed to evaluate image")
+        raise HTTPException(status_code=500, detail=str(e))

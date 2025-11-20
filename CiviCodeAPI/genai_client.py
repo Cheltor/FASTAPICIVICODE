@@ -199,3 +199,128 @@ async def run_assistant(
     except Exception as e:
         logger.exception("Error communicating with Gemini")
         raise RuntimeError("Error communicating with Gemini") from e
+
+async def evaluate_image_for_violation(
+    image_bytes: bytes,
+    mime_type: str,
+    db: Session
+) -> str:
+    """
+    Analyze an image for potential code violations using Gemini Vision and RAG.
+    
+    Args:
+        image_bytes: The raw bytes of the image.
+        mime_type: The MIME type of the image (e.g., 'image/jpeg').
+        db: Database session for tool execution.
+        
+    Returns:
+        A JSON string containing the analysis and potential violations.
+    """
+    _configure_gemini()
+    
+    # Define the tool for searching codes
+    tools_config = [
+        {
+            "function_declarations": [
+                {
+                    "name": "search_codes",
+                    "description": "Search for municipal codes/laws based on a query. Use this to find relevant code sections to answer user questions about regulations.",
+                    "parameters": {
+                        "type": "OBJECT",
+                        "properties": {
+                            "query": {
+                                "type": "STRING",
+                                "description": "The search term or phrase to look for in the codes."
+                            }
+                        },
+                        "required": ["query"]
+                    }
+                }
+            ]
+        }
+    ]
+
+    system_instruction = """You are an expert municipal code enforcement officer assistant.
+    Your task is to analyze images provided by users to identify potential code violations.
+    
+    Process:
+    1. Analyze the image to identify any conditions that might be violations (e.g., tall grass, trash accumulation, structural damage, illegal parking).
+    2. If you see potential violations, use the 'search_codes' tool to find relevant municipal codes. Search for keywords related to what you see.
+    3. Formulate a response that describes the observation and cites the specific codes that might be violated.
+    
+    Output Format:
+    Return a JSON object with the following structure (do not use markdown code blocks, just the raw JSON string):
+    {
+        "observation": "Brief description of what is seen in the image.",
+        "potential_violations": [
+            {
+                "description": "Description of the specific violation (e.g., 'Grass exceeds 10 inches in height').",
+                "code_id": 123, // The ID of the code from the search results, or null if not found
+                "code_citation": "Code 302.4" // The chapter/section or name of the code
+            }
+        ],
+        "recommendation": "Brief recommendation on what to do next."
+    }
+    
+    If no violations are found, return:
+    {
+        "observation": "Description of the image.",
+        "potential_violations": [],
+        "recommendation": "No violations observed."
+    }
+    """
+
+    model = genai.GenerativeModel(
+        model_name="gemini-flash-latest",
+        tools=tools_config,
+        system_instruction=system_instruction
+    )
+    
+    # Create the content part for the image
+    image_part = {
+        "mime_type": mime_type,
+        "data": image_bytes
+    }
+    
+    chat = model.start_chat(history=[])
+    
+    try:
+        # Initial prompt with image
+        prompt = "Analyze this image for potential code violations. Search for relevant codes if you see anything suspicious."
+        response = await chat.send_message_async([prompt, image_part])
+        
+        # Handle tool calls
+        # We might need a loop if it searches multiple times, but usually one search phase is enough for this flow.
+        # We'll support up to 3 turns of tool use.
+        for _ in range(3):
+            part = response.candidates[0].content.parts[0]
+            
+            if not part.function_call:
+                break
+                
+            fc = part.function_call
+            if fc.name == "search_codes":
+                query = fc.args["query"]
+                logger.info(f"Gemini requested search_codes for image analysis with query: {query}")
+                
+                tool_result = search_codes(db, query)
+                
+                response = await chat.send_message_async(
+                    genai.protos.Content(
+                        parts=[genai.protos.Part(
+                            function_response=genai.protos.FunctionResponse(
+                                name="search_codes",
+                                response={"result": tool_result}
+                            )
+                        )]
+                    )
+                )
+            else:
+                break
+        
+        # The final response should be the JSON
+        return response.text
+        
+    except Exception as e:
+        logger.exception("Error analyzing image with Gemini")
+        raise RuntimeError("Error analyzing image with Gemini") from e
