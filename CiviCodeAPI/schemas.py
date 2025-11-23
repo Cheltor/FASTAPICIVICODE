@@ -208,6 +208,7 @@ class ViolationFromCommentRequest(BaseModel):
     status: Optional[int] = None
     description: Optional[str] = None
     comment: Optional[str] = None
+    keep_filenames: Optional[List[str]] = None
 
     @validator("deadline")
     def validate_deadline(cls, value):

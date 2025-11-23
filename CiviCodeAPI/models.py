@@ -48,6 +48,22 @@ class ChatLog(Base):
 
     user = relationship('User')
 
+# Image Analysis Logs
+class ImageAnalysisLog(Base):
+    __tablename__ = 'image_analysis_logs'
+
+    id = Column(BigInteger, primary_key=True, index=True)
+    user_id = Column(BigInteger, ForeignKey('users.id'), nullable=False)
+    image_count = Column(Integer)
+    result = Column(Text) # JSON string
+    status = Column(String)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+
+    user = relationship('User')
+
+    # Relationship to attachments (polymorphic-like)
+    # We will manually query ActiveStorageAttachment where record_type='ImageAnalysisLog' and record_id=this.id
+
 # ActiveStorageAttachments
 class ActiveStorageAttachment(Base):
     __tablename__ = "active_storage_attachments"

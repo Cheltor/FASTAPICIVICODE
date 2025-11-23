@@ -196,3 +196,118 @@ def get_chat_logs(
             for l in logs
         ],
     }
+
+
+# Image Analysis Settings & Logs
+
+@router.get("/settings/image-analysis", response_model=ChatSettingResponse)
+def get_image_analysis_setting(db: Session = Depends(get_db)):
+    setting = db.query(AppSetting).filter(AppSetting.key == "image_analysis_enabled").first()
+    if not setting:
+        # default to enabled
+        return {"enabled": True}
+    return {"enabled": setting.value.lower() == "true"}
+
+@router.patch("/settings/image-analysis", response_model=ChatSettingResponse)
+def set_image_analysis_setting(payload: ChatSettingUpdate, db: Session = Depends(get_db), current_user: User = Depends(_get_current_user)):
+    # Only allow admins (role == 3)
+    if current_user.role != 3:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+
+    setting = db.query(AppSetting).filter(AppSetting.key == "image_analysis_enabled").first()
+    value_str = "true" if payload.enabled else "false"
+    
+    old = setting.value if setting else None
+    if setting:
+        setting.value = value_str
+    else:
+        setting = AppSetting(key="image_analysis_enabled", value=value_str)
+        db.add(setting)
+
+    # add audit row
+    audit = AppSettingAudit(key="image_analysis_enabled", old_value=old, new_value=value_str, changed_by=current_user.id)
+    db.add(audit)
+    db.commit()
+
+    # notify subscribers
+    try:
+        broadcaster.publish_nowait({"key": "image_analysis_enabled", "enabled": value_str == 'true'})
+    except Exception:
+        pass
+    return {"enabled": payload.enabled}
+
+@router.get("/settings/image-analysis/logs")
+def get_image_analysis_logs(
+    limit: int = 100,
+    offset: int = 0,
+    user_id: Optional[int] = None,
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(_get_current_user),
+):
+    # only admins may read logs
+    if current_user.role != 3:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+
+    from models import ImageAnalysisLog, ActiveStorageAttachment, ActiveStorageBlob
+    from azure.storage.blob import generate_blob_sas, BlobSasPermissions
+    import storage
+
+    query = db.query(ImageAnalysisLog).options(joinedload(ImageAnalysisLog.user))
+
+    if user_id is not None:
+        query = query.filter(ImageAnalysisLog.user_id == user_id)
+    if start_date:
+        query = query.filter(ImageAnalysisLog.created_at >= start_date)
+    if end_date:
+        query = query.filter(ImageAnalysisLog.created_at <= end_date)
+
+    total = query.count()
+    logs = query.order_by(ImageAnalysisLog.created_at.desc()).offset(offset).limit(limit).all()
+
+    # For each log, fetch associated images and generate SAS URLs
+    results = []
+    for l in logs:
+        # Fetch attachments
+        attachments = db.query(ActiveStorageAttachment).filter(
+            ActiveStorageAttachment.record_type == 'ImageAnalysisLog',
+            ActiveStorageAttachment.record_id == l.id
+        ).all()
+        
+        images = []
+        for att in attachments:
+            blob = db.query(ActiveStorageBlob).filter(ActiveStorageBlob.id == att.blob_id).first()
+            if blob:
+                try:
+                    sas_token = generate_blob_sas(
+                        account_name=storage.account_name,
+                        container_name=storage.CONTAINER_NAME,
+                        blob_name=blob.key,
+                        account_key=storage.account_key,
+                        permission=BlobSasPermissions(read=True),
+                        start=datetime.utcnow() - timedelta(minutes=5),
+                        expiry=datetime.utcnow() + timedelta(hours=1),
+                    )
+                    url = f"https://{storage.account_name}.blob.core.windows.net/{storage.CONTAINER_NAME}/{blob.key}?{sas_token}"
+                    images.append({"url": url, "filename": blob.filename, "content_type": blob.content_type})
+                except Exception as e:
+                    logging.error(f"Error generating SAS for blob {blob.key}: {e}")
+
+        results.append({
+            "id": l.id,
+            "user_id": l.user_id,
+            "user_email": l.user.email if l.user else None,
+            "image_count": l.image_count,
+            "result": l.result,
+            "status": l.status,
+            "created_at": l.created_at,
+            "images": images
+        })
+
+    return {
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "items": results,
+    }

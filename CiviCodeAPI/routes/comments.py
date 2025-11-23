@@ -265,7 +265,23 @@ def create_violation_from_comment(
             .all()
         )
 
+        # If keep_filenames is specified, we need to check the blob filenames
+        allowed_blob_ids = None
+        if payload.keep_filenames is not None:
+            blob_ids = [a.blob_id for a in attachments]
+            if blob_ids:
+                blobs = db.query(ActiveStorageBlob).filter(ActiveStorageBlob.id.in_(blob_ids)).all()
+                allowed_blob_ids = {
+                    b.id for b in blobs 
+                    if b.filename in payload.keep_filenames
+                }
+            else:
+                allowed_blob_ids = set()
+
         for attachment in attachments:
+            if allowed_blob_ids is not None and attachment.blob_id not in allowed_blob_ids:
+                continue
+
             db.add(
                 ActiveStorageAttachment(
                     name="photos",
