@@ -19,6 +19,7 @@ def norm_space(s: str) -> str:
     return s.strip()
 
 def norm(s: str) -> str:
+    """Normalize a string by trimming and lowercasing."""
     return (s or "").strip().lower()
 
 def normalize_section_for_match(chapter: str, section: str) -> str:
@@ -38,12 +39,14 @@ def normalize_section_for_match(chapter: str, section: str) -> str:
     return ".".join(parts)
 
 def token_jaccard(a: str, b: str) -> float:
+    """Calculate Jaccard similarity between token sets of two strings."""
     A, B = set(norm_space(a).lower().split()), set(norm_space(b).lower().split())
     if not A or not B:
         return 0.0
     return len(A & B) / len(A | B)
 
 def is_large_delta(old: str, new: str, threshold: float = 0.65) -> bool:
+    """Check if the difference between two strings is considered large based on Jaccard similarity."""
     return token_jaccard(old, new) < threshold
 
 # ---------- schemas ----------
@@ -91,6 +94,7 @@ class ApplyRequest(BaseModel):
 
 # ---------- core ----------
 def index_existing_by_key(rows: List[Code]) -> Dict[Tuple[str, str], Code]:
+    """Create a dictionary index of existing codes keyed by normalized (chapter, section)."""
     idx: Dict[Tuple[str, str], Code] = {}
     for r in rows:
         key = (norm(r.chapter), normalize_section_for_match(r.chapter, r.section))
@@ -99,6 +103,16 @@ def index_existing_by_key(rows: List[Code]) -> Dict[Tuple[str, str], Code]:
 
 @router.post("/diff", response_model=DiffResponse)
 def diff(payload: ChapterPayload, db: Session = Depends(get_db)):
+    """
+    Compare incoming code chapter data against the database to generate a diff (creates, updates, conflicts).
+
+    Args:
+        payload (ChapterPayload): Incoming chapter data.
+        db (Session): The database session.
+
+    Returns:
+        DiffResponse: A breakdown of proposed changes.
+    """
     # Load existing for this chapter only (faster) -- adjust if your /codes spans all chapters
     existing_rows: List[Code] = db.query(Code).filter(Code.chapter == payload.chapter).all()
     existing_idx = index_existing_by_key(existing_rows)
@@ -166,6 +180,16 @@ def diff(payload: ChapterPayload, db: Session = Depends(get_db)):
 
 @router.post("/apply")
 def apply_changes(body: ApplyRequest, db: Session = Depends(get_db)):
+    """
+    Apply approved changes (creates and updates) to the database.
+
+    Args:
+        body (ApplyRequest): List of creates and updates to apply.
+        db (Session): The database session.
+
+    Returns:
+        dict: Counts of created and updated records.
+    """
     created = updated = 0
     # CREATE
     for it in body.creates:

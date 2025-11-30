@@ -29,6 +29,19 @@ class ChatSettingUpdate(BaseModel):
 
 
 def _get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
+    """
+    Get the current authenticated user.
+
+    Args:
+        token (str): OAuth2 token.
+        db (Session): The database session.
+
+    Returns:
+        User: The user object.
+
+    Raises:
+        HTTPException: If token invalid or user not found.
+    """
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id = int(payload.get("sub"))
@@ -42,6 +55,15 @@ def _get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends
 
 @router.get("/settings/chat", response_model=ChatSettingResponse)
 def get_chat_setting(db: Session = Depends(get_db)):
+    """
+    Get the current chat enablement setting.
+
+    Args:
+        db (Session): The database session.
+
+    Returns:
+        ChatSettingResponse: The setting state.
+    """
     setting = db.query(AppSetting).filter(AppSetting.key == "chat_enabled").first()
     if not setting:
         # default to enabled
@@ -51,6 +73,12 @@ def get_chat_setting(db: Session = Depends(get_db)):
 
 @router.get('/settings/stream')
 def settings_stream():
+    """
+    SSE endpoint for streaming settings updates.
+
+    Returns:
+        StreamingResponse: Server-Sent Events stream.
+    """
     async def event_generator():
         """
         SSE generator that yields broadcaster events and sends a heartbeat comment
@@ -102,6 +130,20 @@ def settings_stream():
 
 @router.patch("/settings/chat", response_model=ChatSettingResponse)
 def set_chat_setting(payload: ChatSettingUpdate, db: Session = Depends(get_db), current_user: User = Depends(_get_current_user)):
+    """
+    Update the chat enablement setting.
+
+    Args:
+        payload (ChatSettingUpdate): New setting value.
+        db (Session): The database session.
+        current_user (User): The authenticated user (admin only).
+
+    Returns:
+        ChatSettingResponse: The updated setting.
+
+    Raises:
+        HTTPException: If permission denied.
+    """
     # Only allow admins (role == 3)
     if current_user.role != 3:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
@@ -144,6 +186,27 @@ def get_chat_logs(
     db: Session = Depends(get_db),
     current_user: User = Depends(_get_current_user),
 ):
+    """
+    Fetch chat logs with filtering (admin only).
+
+    Args:
+        limit (int): Max logs.
+        offset (int): Pagination offset.
+        user_id (int, optional): Filter by user ID.
+        user_email (str, optional): Filter by user email.
+        thread_id (str, optional): Filter by thread ID.
+        q (str, optional): Search query.
+        start_date (datetime, optional): Start date filter.
+        end_date (datetime, optional): End date filter.
+        db (Session): The database session.
+        current_user (User): The authenticated user.
+
+    Returns:
+        dict: List of chat logs and metadata.
+
+    Raises:
+        HTTPException: If permission denied.
+    """
     # only admins may read logs
     if current_user.role != 3:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
@@ -202,6 +265,15 @@ def get_chat_logs(
 
 @router.get("/settings/image-analysis", response_model=ChatSettingResponse)
 def get_image_analysis_setting(db: Session = Depends(get_db)):
+    """
+    Get the image analysis enablement setting.
+
+    Args:
+        db (Session): The database session.
+
+    Returns:
+        ChatSettingResponse: The setting state.
+    """
     setting = db.query(AppSetting).filter(AppSetting.key == "image_analysis_enabled").first()
     if not setting:
         # default to enabled
@@ -210,6 +282,20 @@ def get_image_analysis_setting(db: Session = Depends(get_db)):
 
 @router.patch("/settings/image-analysis", response_model=ChatSettingResponse)
 def set_image_analysis_setting(payload: ChatSettingUpdate, db: Session = Depends(get_db), current_user: User = Depends(_get_current_user)):
+    """
+    Update the image analysis enablement setting.
+
+    Args:
+        payload (ChatSettingUpdate): New setting value.
+        db (Session): The database session.
+        current_user (User): The authenticated user (admin only).
+
+    Returns:
+        ChatSettingResponse: The updated setting.
+
+    Raises:
+        HTTPException: If permission denied.
+    """
     # Only allow admins (role == 3)
     if current_user.role != 3:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
@@ -246,6 +332,24 @@ def get_image_analysis_logs(
     db: Session = Depends(get_db),
     current_user: User = Depends(_get_current_user),
 ):
+    """
+    Fetch image analysis logs (admin only).
+
+    Args:
+        limit (int): Max logs.
+        offset (int): Pagination offset.
+        user_id (int, optional): Filter by user ID.
+        start_date (datetime, optional): Start date filter.
+        end_date (datetime, optional): End date filter.
+        db (Session): The database session.
+        current_user (User): The authenticated user.
+
+    Returns:
+        dict: List of logs and metadata.
+
+    Raises:
+        HTTPException: If permission denied.
+    """
     # only admins may read logs
     if current_user.role != 3:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")

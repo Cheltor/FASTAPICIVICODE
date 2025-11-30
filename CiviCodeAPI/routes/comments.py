@@ -203,7 +203,16 @@ def _build_comment_response(db: Session, comment: Comment) -> CommentResponse:
 router = APIRouter()
 @router.get("/comments/{comment_id}/mentions", response_model=List[UserResponse])
 def get_comment_mentions(comment_id: int, db: Session = Depends(get_db)):
-    """Return the list of users mentioned in a given comment."""
+    """
+    Return the list of users mentioned in a given comment.
+
+    Args:
+        comment_id (int): The ID of the comment.
+        db (Session): The database session.
+
+    Returns:
+        list[UserResponse]: A list of mentioned users.
+    """
     mentions = (
         db.query(User)
         .join(Mention, Mention.user_id == User.id)
@@ -219,7 +228,20 @@ def create_violation_from_comment(
     payload: ViolationFromCommentRequest = Body(...),
     db: Session = Depends(get_db),
 ):
-    """Create a violation pre-populated with data copied from a comment."""
+    """
+    Create a violation pre-populated with data copied from a comment.
+
+    Args:
+        comment_id (int): The ID of the source comment.
+        payload (ViolationFromCommentRequest): Violation creation data.
+        db (Session): The database session.
+
+    Returns:
+        ViolationResponse: The created violation.
+
+    Raises:
+        HTTPException: If comment not found or data missing.
+    """
 
     comment = db.query(Comment).filter(Comment.id == comment_id).first()
     if not comment:
@@ -350,6 +372,17 @@ def _require_admin(token: str = Depends(oauth2_scheme), db: Session = Depends(ge
 # Get recent comments with optional pagination; batches related data to avoid N+1
 @router.get("/comments/", response_model=List[CommentResponse])
 def get_comments(skip: int = 0, limit: int = 200, db: Session = Depends(get_db)):
+    """
+    Get recent comments with optional pagination.
+
+    Args:
+        skip (int): Pagination offset.
+        limit (int): Pagination limit.
+        db (Session): The database session.
+
+    Returns:
+        list[CommentResponse]: A list of comments.
+    """
     # Pull a page of comments in newest-first order
     q = db.query(Comment).order_by(Comment.created_at.desc())
     if skip:
@@ -442,6 +475,17 @@ def get_review_later_comments(
     db: Session = Depends(get_db),
     current_user: User = Depends(_require_user),
 ):
+    """
+    Get comments flagged for later review by the current user.
+
+    Args:
+        limit (int): Max results.
+        db (Session): The database session.
+        current_user (User): The authenticated user.
+
+    Returns:
+        list[CommentResponse]: A list of flagged comments.
+    """
     comments = (
         db.query(Comment)
         .filter(Comment.review_later.is_(True))
@@ -462,6 +506,21 @@ def set_comment_review_later(
     db: Session = Depends(get_db),
     current_user: User = Depends(_require_user),
 ):
+    """
+    Set or unset the review_later flag on a comment.
+
+    Args:
+        comment_id (int): The ID of the comment.
+        payload (CommentReviewUpdate): Update data.
+        db (Session): The database session.
+        current_user (User): The authenticated user.
+
+    Returns:
+        CommentResponse: The updated comment.
+
+    Raises:
+        HTTPException: If comment not found or permission denied.
+    """
     comment = db.query(Comment).filter(Comment.id == comment_id).first()
     if not comment:
         raise HTTPException(status_code=404, detail="Comment not found")
@@ -475,12 +534,37 @@ def set_comment_review_later(
 # Get all contact comments (admin list)
 @router.get("/comments/contact/", response_model=List[ContactCommentResponse])
 def get_all_contact_comments(skip: int = 0, db: Session = Depends(get_db)):
+    """
+    Get all contact comments (admin utility).
+
+    Args:
+        skip (int): Pagination offset.
+        db (Session): The database session.
+
+    Returns:
+        list[ContactCommentResponse]: A list of contact comments.
+    """
     comments = db.query(ContactComment).order_by(ContactComment.created_at.desc()).offset(skip).all()
     return comments
 
 # Update a comment by ID
 @router.put("/comments/{comment_id}", response_model=CommentResponse)
 def update_comment(comment_id: int, comment_in: CommentCreate, db: Session = Depends(get_db), admin_user: User = Depends(_require_admin)):
+    """
+    Update a comment.
+
+    Args:
+        comment_id (int): The ID of the comment.
+        comment_in (CommentCreate): Updated comment data.
+        db (Session): The database session.
+        admin_user (User): Admin user check.
+
+    Returns:
+        CommentResponse: The updated comment.
+
+    Raises:
+        HTTPException: If comment is not found.
+    """
     db_comment = db.query(Comment).filter(Comment.id == comment_id).first()
     if not db_comment:
         raise HTTPException(status_code=404, detail="Comment not found")
@@ -497,6 +581,17 @@ def update_comment(comment_id: int, comment_in: CommentCreate, db: Session = Dep
 # Delete a comment by ID
 @router.delete("/comments/{comment_id}", status_code=204)
 def delete_comment(comment_id: int, db: Session = Depends(get_db), admin_user: User = Depends(_require_admin)):
+    """
+    Delete a comment.
+
+    Args:
+        comment_id (int): The ID of the comment.
+        db (Session): The database session.
+        admin_user (User): Admin user check.
+
+    Raises:
+        HTTPException: If comment not found or deletion fails.
+    """
     db_comment = db.query(Comment).filter(Comment.id == comment_id).first()
     if not db_comment:
         raise HTTPException(status_code=404, detail="Comment not found")
@@ -515,6 +610,18 @@ def create_comment(
     mentioned_contact_ids: Optional[List[int]] = Body(default=None),
     db: Session = Depends(get_db),
 ):
+    """
+    Create a new comment (JSON only).
+
+    Args:
+        comment (CommentCreate): Comment data.
+        mentioned_user_ids (list[int], optional): IDs of mentioned users.
+        mentioned_contact_ids (list[int], optional): IDs of mentioned contacts.
+        db (Session): The database session.
+
+    Returns:
+        CommentResponse: The created comment.
+    """
     logger.debug(f"Received payload: {comment.dict()}")
     logger.debug(f"Creating comment with content: {comment.content}, user_id: {comment.user_id}, unit_id: {comment.unit_id}")
     new_comment = Comment(**comment.dict())
@@ -549,6 +656,18 @@ def get_comments_by_address(
     page_size: int = Query(10, ge=1, le=100),
     db: Session = Depends(get_db),
 ):
+    """
+    Get comments for an address with pagination support.
+
+    Args:
+        address_id (int): The ID of the address.
+        page (int, optional): Page number.
+        page_size (int): Items per page.
+        db (Session): The database session.
+
+    Returns:
+        Union[CommentPageResponse, List[CommentResponse]]: List or page of comments.
+    """
     base_query = (
         db.query(Comment)
         .filter(Comment.address_id == address_id)
@@ -575,6 +694,16 @@ def get_comments_by_address(
 # Get all comments for a specific Contact
 @router.get("/comments/contact/{contact_id}", response_model=List[ContactCommentResponse])
 def get_comments_by_contact(contact_id: int, db: Session = Depends(get_db)):
+    """
+    Get direct comments on a contact.
+
+    Args:
+        contact_id (int): The ID of the contact.
+        db (Session): The database session.
+
+    Returns:
+        list[ContactCommentResponse]: List of contact comments.
+    """
     if contact_id is None:
         raise HTTPException(status_code=422, detail="Invalid contact_id")
     comments = db.query(ContactComment).filter(ContactComment.contact_id == contact_id).order_by(ContactComment.created_at.desc()).all()
@@ -583,6 +712,16 @@ def get_comments_by_contact(contact_id: int, db: Session = Depends(get_db)):
 
 @router.get("/comments/contact/{contact_id}/mentioned", response_model=List[CommentResponse])
 def get_comments_mentioning_contact(contact_id: int, db: Session = Depends(get_db)):
+    """
+    Get address comments that mention a specific contact.
+
+    Args:
+        contact_id (int): The ID of the contact.
+        db (Session): The database session.
+
+    Returns:
+        list[CommentResponse]: List of mentioning comments.
+    """
     if contact_id is None:
         raise HTTPException(status_code=422, detail="Invalid contact_id")
     linked_comments = (
@@ -597,6 +736,19 @@ def get_comments_mentioning_contact(contact_id: int, db: Session = Depends(get_d
 # Get a single ContactComment by ID (for admin editor)
 @router.get("/comments/contact/by-id/{comment_id}", response_model=ContactCommentResponse)
 def get_contact_comment(comment_id: int, db: Session = Depends(get_db)):
+    """
+    Get a contact comment by ID.
+
+    Args:
+        comment_id (int): The ID of the comment.
+        db (Session): The database session.
+
+    Returns:
+        ContactCommentResponse: The comment details.
+
+    Raises:
+        HTTPException: If comment is not found.
+    """
     cc = db.query(ContactComment).filter(ContactComment.id == comment_id).first()
     if not cc:
         raise HTTPException(status_code=404, detail="ContactComment not found")
@@ -605,6 +757,21 @@ def get_contact_comment(comment_id: int, db: Session = Depends(get_db)):
 # Update a ContactComment (edit the comment text)
 @router.put("/comments/contact/{comment_id}", response_model=ContactCommentResponse)
 def update_contact_comment(comment_id: int, data: dict = Body(...), db: Session = Depends(get_db), admin_user: User = Depends(_require_admin)):
+    """
+    Update a contact comment.
+
+    Args:
+        comment_id (int): The ID of the comment.
+        data (dict): Updated data.
+        db (Session): The database session.
+        admin_user (User): Admin user check.
+
+    Returns:
+        ContactCommentResponse: The updated comment.
+
+    Raises:
+        HTTPException: If comment not found.
+    """
     cc = db.query(ContactComment).filter(ContactComment.id == comment_id).first()
     if not cc:
         raise HTTPException(status_code=404, detail="ContactComment not found")
@@ -628,6 +795,17 @@ def update_contact_comment(comment_id: int, data: dict = Body(...), db: Session 
 # Delete a ContactComment (admin-only)
 @router.delete("/comments/contact/{comment_id}", status_code=204)
 def delete_contact_comment(comment_id: int, db: Session = Depends(get_db), admin_user: User = Depends(_require_admin)):
+    """
+    Delete a contact comment.
+
+    Args:
+        comment_id (int): The ID of the comment.
+        db (Session): The database session.
+        admin_user (User): Admin user check.
+
+    Raises:
+        HTTPException: If comment not found or deletion fails.
+    """
     cc = db.query(ContactComment).filter(ContactComment.id == comment_id).first()
     if not cc:
         raise HTTPException(status_code=404, detail="ContactComment not found")
@@ -641,6 +819,17 @@ def delete_contact_comment(comment_id: int, db: Session = Depends(get_db), admin
 # Fetch Comment photo by ID
 @router.get("/comments/{comment_id}/photos")
 def get_comment_photos(comment_id: int, download: bool = False, db: Session = Depends(get_db)):
+    """
+    Get signed URLs for photos attached to a comment.
+
+    Args:
+        comment_id (int): The ID of the comment.
+        download (bool): Download flag.
+        db (Session): The database session.
+
+    Returns:
+        list[dict]: Photo details.
+    """
     # Check if the comment exists
     comment = db.query(Comment).filter_by(id=comment_id).first()
     if not comment:
@@ -728,6 +917,23 @@ async def create_address_comment(
     files: List[UploadFile] = File([]),
     db: Session = Depends(get_db),
 ):
+    """
+    Create an address comment with optional file attachments.
+
+    Args:
+        address_id (int): Address ID.
+        content (str): Comment content.
+        user_id (int): User ID.
+        unit_id (int, optional): Unit ID.
+        mentioned_user_ids (str, optional): Comma-separated user IDs.
+        mentioned_contact_ids (str, optional): Comma-separated contact IDs.
+        review_later (bool, optional): Review flag.
+        files (list[UploadFile]): Uploaded files.
+        db (Session): The database session.
+
+    Returns:
+        CommentResponse: The created comment.
+    """
     new_comment = Comment(
         content=content,
         user_id=user_id,
@@ -847,6 +1053,20 @@ async def create_contact_comment(
     files: List[UploadFile] = File([]),
     db: Session = Depends(get_db),
 ):
+    """
+    Create a contact comment with optional attachments.
+
+    Args:
+        contact_id (int): Contact ID.
+        comment (str): Comment content.
+        user_id (int): User ID.
+        mentioned_user_ids (str, optional): Mentioned user IDs.
+        files (list[UploadFile]): Uploaded files.
+        db (Session): The database session.
+
+    Returns:
+        ContactCommentResponse: The created comment.
+    """
     # Persist the contact comment first
     new_comment = ContactComment(comment=comment, user_id=user_id, contact_id=contact_id)
     db.add(new_comment)
@@ -955,7 +1175,20 @@ async def create_contact_comment(
 
 @router.get("/comments/contact/{comment_id}/attachments")
 def get_contact_comment_attachments(comment_id: int, download: bool = False, db: Session = Depends(get_db)):
-    """Return signed URLs for attachments on a ContactComment."""
+    """
+    Return signed URLs for attachments on a ContactComment.
+
+    Args:
+        comment_id (int): The ID of the comment.
+        download (bool): Download flag.
+        db (Session): The database session.
+
+    Returns:
+        list[dict]: Attachment details.
+
+    Raises:
+        HTTPException: If comment not found.
+    """
     # Ensure the comment exists
     contact_comment = db.query(ContactComment).filter(ContactComment.id == comment_id).first()
     if not contact_comment:
@@ -996,7 +1229,19 @@ def get_contact_comment_attachments(comment_id: int, download: bool = False, db:
 
 @router.get("/comments/contact/{comment_id}/attachments/count")
 def get_contact_comment_attachment_count(comment_id: int, db: Session = Depends(get_db)):
-    """Return the number of attachments for a ContactComment without generating SAS URLs."""
+    """
+    Return the number of attachments for a ContactComment without generating SAS URLs.
+
+    Args:
+        comment_id (int): The ID of the comment.
+        db (Session): The database session.
+
+    Returns:
+        dict: {"count": int}
+
+    Raises:
+        HTTPException: If comment not found.
+    """
     contact_comment = db.query(ContactComment).filter(ContactComment.id == comment_id).first()
     if not contact_comment:
         raise HTTPException(status_code=404, detail="ContactComment not found")
@@ -1010,6 +1255,16 @@ def get_contact_comment_attachment_count(comment_id: int, db: Session = Depends(
 # Comments for a specific Unit
 @router.get("/comments/unit/{unit_id}", response_model=List[CommentResponse])
 def get_comments_by_unit(unit_id: int, db: Session = Depends(get_db)):
+    """
+    Get comments for a specific unit.
+
+    Args:
+        unit_id (int): Unit ID.
+        db (Session): The database session.
+
+    Returns:
+        list[CommentResponse]: List of unit comments.
+    """
     comments = db.query(Comment).filter(Comment.unit_id == unit_id).order_by(Comment.created_at.desc()).all()
     # Return empty list if no comments
     if not comments:
@@ -1061,6 +1316,22 @@ async def create_unit_comment(
     files: List[UploadFile] = File([]),
     db: Session = Depends(get_db),
 ):
+    """
+    Create a unit comment with optional attachments.
+
+    Args:
+        unit_id (int): Unit ID.
+        address_id (int): Address ID.
+        content (str): Comment content.
+        user_id (int): User ID.
+        mentioned_user_ids (str, optional): Mentioned user IDs.
+        mentioned_contact_ids (str, optional): Mentioned contact IDs.
+        files (list[UploadFile]): Uploaded files.
+        db (Session): The database session.
+
+    Returns:
+        CommentResponse: The created comment.
+    """
     new_comment = Comment(content=content, user_id=user_id, address_id=address_id, unit_id=unit_id)
     db.add(new_comment)
     db.commit()
@@ -1164,6 +1435,21 @@ async def create_unit_comment(
 # Update a unit comment (admin-only)
 @router.put("/comments/unit/{comment_id}", response_model=CommentResponse)
 def update_unit_comment(comment_id: int, comment_in: CommentCreate, db: Session = Depends(get_db), admin_user: User = Depends(_require_admin)):
+    """
+    Update a unit comment.
+
+    Args:
+        comment_id (int): Comment ID.
+        comment_in (CommentCreate): Update data.
+        db (Session): The database session.
+        admin_user (User): Admin user check.
+
+    Returns:
+        CommentResponse: The updated comment.
+
+    Raises:
+        HTTPException: If comment not found.
+    """
     db_comment = db.query(Comment).filter(Comment.id == comment_id).first()
     if not db_comment:
         raise HTTPException(status_code=404, detail="Comment not found")
@@ -1177,6 +1463,17 @@ def update_unit_comment(comment_id: int, comment_in: CommentCreate, db: Session 
 # Delete a unit comment (admin-only)
 @router.delete("/comments/unit/{comment_id}", status_code=204)
 def delete_unit_comment(comment_id: int, db: Session = Depends(get_db), admin_user: User = Depends(_require_admin)):
+    """
+    Delete a unit comment.
+
+    Args:
+        comment_id (int): Comment ID.
+        db (Session): The database session.
+        admin_user (User): Admin user check.
+
+    Raises:
+        HTTPException: If comment not found or deletion fails.
+    """
     db_comment = db.query(Comment).filter(Comment.id == comment_id).first()
     if not db_comment:
         raise HTTPException(status_code=404, detail="Comment not found")

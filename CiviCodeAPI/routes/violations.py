@@ -42,6 +42,20 @@ STATUS_STRING_TO_INT = {
 # Extend deadline for a violation
 @router.patch("/violation/{violation_id}/deadline", response_model=schemas.ViolationResponse)
 def extend_violation_deadline(violation_id: int, extend: int = Body(..., embed=True), db: Session = Depends(get_db)):
+    """
+    Extend the deadline of a violation.
+
+    Args:
+        violation_id (int): The ID of the violation.
+        extend (int): The number of days to extend.
+        db (Session): The database session.
+
+    Returns:
+        ViolationResponse: The updated violation.
+
+    Raises:
+        HTTPException: If violation is not found.
+    """
     violation = db.query(models.Violation).filter(models.Violation.id == violation_id).first()
     if not violation:
         raise HTTPException(status_code=404, detail="Violation not found")
@@ -62,6 +76,22 @@ def get_violations(
     unit_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
 ):
+    """
+    Get a list of violations with optional filters.
+
+    Args:
+        response (Response): Response object for headers.
+        skip (int): Pagination offset.
+        limit (int, optional): Pagination limit.
+        status (str, optional): Filter by status ('current', 'resolved', etc.).
+        assigned_user_id (int, optional): Filter by assignee ID.
+        user_email (str, optional): Filter by assignee email.
+        unit_id (int, optional): Filter by unit ID.
+        db (Session): The database session.
+
+    Returns:
+        list[ViolationResponse]: A list of violations.
+    """
     query = db.query(Violation)
 
     if status:
@@ -115,6 +145,16 @@ def get_violations(
 # Create a new violation
 @router.post("/violations/", response_model=schemas.ViolationResponse)
 def create_violation(violation: schemas.ViolationCreate, db: Session = Depends(get_db)):
+    """
+    Create a new violation.
+
+    Args:
+        violation (ViolationCreate): The violation data.
+        db (Session): The database session.
+
+    Returns:
+        ViolationResponse: The created violation.
+    """
     violation_data = violation.dict(exclude={"codes"})
     # Ensure violation_type is set, default to "doorhanger" if not provided
     if not violation_data.get("violation_type"):
@@ -140,6 +180,20 @@ def update_violation_assignee(
     user_id: int = Form(...),
     db: Session = Depends(get_db),
 ):
+    """
+    Reassign a violation to a different user.
+
+    Args:
+        violation_id (int): The ID of the violation.
+        user_id (int): The ID of the new assignee.
+        db (Session): The database session.
+
+    Returns:
+        ViolationResponse: The updated violation.
+
+    Raises:
+        HTTPException: If violation or user is not found.
+    """
     violation = db.query(models.Violation).filter(models.Violation.id == violation_id).first()
     if not violation:
         raise HTTPException(status_code=404, detail="Violation not found")
@@ -155,6 +209,19 @@ def update_violation_assignee(
 # Get a specific violation by ID
 @router.get("/violation/{violation_id}", response_model=schemas.ViolationResponse)
 def get_violation(violation_id: int, db: Session = Depends(get_db)):
+    """
+    Get a specific violation by ID.
+
+    Args:
+        violation_id (int): The ID of the violation.
+        db (Session): The database session.
+
+    Returns:
+        ViolationResponse: The violation details.
+
+    Raises:
+        HTTPException: If violation is not found.
+    """
     violation = (
         db.query(Violation)
         .filter(Violation.id == violation_id)
@@ -194,6 +261,16 @@ def get_violation(violation_id: int, db: Session = Depends(get_db)):
 # Get all violations for a specific Address
 @router.get("/violations/address/{address_id}", response_model=List[schemas.ViolationResponse])
 def get_violations_by_address(address_id: int, db: Session = Depends(get_db)):
+    """
+    Get all violations associated with a specific address (including unit violations).
+
+    Args:
+        address_id (int): The ID of the address.
+        db (Session): The database session.
+
+    Returns:
+        list[ViolationResponse]: A list of violations.
+    """
     # Return violations either directly on the address or attached to units belonging to the address
     from models import Unit
 
@@ -224,6 +301,16 @@ def get_violations_by_address(address_id: int, db: Session = Depends(get_db)):
 # Show all citations for a specific Violation
 @router.get("/violation/{violation_id}/citations", response_model=List[schemas.CitationResponse])
 def get_citations_by_violation(violation_id: int, db: Session = Depends(get_db)):
+    """
+    Get all citations for a specific violation.
+
+    Args:
+        violation_id (int): The ID of the violation.
+        db (Session): The database session.
+
+    Returns:
+        list[CitationResponse]: A list of citations.
+    """
     citations = (
         db.query(Citation)
         .options(
@@ -248,6 +335,16 @@ def get_citations_by_violation(violation_id: int, db: Session = Depends(get_db))
 # Delete a violation by ID
 @router.delete("/violations/{violation_id}", status_code=204)
 def delete_violation(violation_id: int, db: Session = Depends(get_db)):
+    """
+    Delete a violation.
+
+    Args:
+        violation_id (int): The ID of the violation.
+        db (Session): The database session.
+
+    Raises:
+        HTTPException: If violation is not found or deletion fails.
+    """
     vio = db.query(models.Violation).filter(models.Violation.id == violation_id).first()
     if not vio:
         raise HTTPException(status_code=404, detail="Violation not found")
@@ -261,6 +358,20 @@ def delete_violation(violation_id: int, db: Session = Depends(get_db)):
 # Add a comment to a violation
 @router.post("/violation/{violation_id}/comments", response_model=schemas.ViolationCommentResponse)
 def add_violation_comment(violation_id: int, comment: schemas.ViolationCommentCreate, db: Session = Depends(get_db)):
+    """
+    Add a comment to a violation.
+
+    Args:
+        violation_id (int): The ID of the violation.
+        comment (ViolationCommentCreate): The comment data.
+        db (Session): The database session.
+
+    Returns:
+        ViolationCommentResponse: The created comment.
+
+    Raises:
+        HTTPException: If violation is not found.
+    """
     # Ensure violation exists
     violation = db.query(models.Violation).filter(models.Violation.id == violation_id).first()
     if not violation:
@@ -325,6 +436,22 @@ async def add_violation_comment_with_attachments(
     files: List[UploadFile] = File([]),
     db: Session = Depends(get_db),
 ):
+    """
+    Add a comment to a violation with file attachments.
+
+    Args:
+        violation_id (int): The ID of the violation.
+        content (str): Comment content.
+        user_id (int): User ID of the author.
+        files (list[UploadFile]): List of files to upload.
+        db (Session): The database session.
+
+    Returns:
+        ViolationCommentResponse: The created comment.
+
+    Raises:
+        HTTPException: If violation is not found.
+    """
     # Ensure violation exists
     violation = db.query(models.Violation).filter(models.Violation.id == violation_id).first()
     if not violation:
@@ -416,6 +543,19 @@ async def add_violation_comment_with_attachments(
 # Abate (close) a violation
 @router.post("/violation/{violation_id}/abate", response_model=schemas.ViolationResponse)
 def abate_violation(violation_id: int, db: Session = Depends(get_db)):
+    """
+    Abate (resolve) a violation.
+
+    Args:
+        violation_id (int): The ID of the violation.
+        db (Session): The database session.
+
+    Returns:
+        ViolationResponse: The updated violation.
+
+    Raises:
+        HTTPException: If violation is not found.
+    """
     violation = db.query(models.Violation).options(joinedload(models.Violation.user)).filter(models.Violation.id == violation_id).first()
     if not violation:
         raise HTTPException(status_code=404, detail="Violation not found")
@@ -444,6 +584,19 @@ def abate_violation(violation_id: int, db: Session = Depends(get_db)):
 # Reopen a violation (set status back to current)
 @router.post("/violation/{violation_id}/reopen", response_model=schemas.ViolationResponse)
 def reopen_violation(violation_id: int, db: Session = Depends(get_db)):
+    """
+    Reopen a resolved violation.
+
+    Args:
+        violation_id (int): The ID of the violation.
+        db (Session): The database session.
+
+    Returns:
+        ViolationResponse: The updated violation.
+
+    Raises:
+        HTTPException: If violation is not found.
+    """
     violation = db.query(models.Violation).options(joinedload(models.Violation.user)).filter(models.Violation.id == violation_id).first()
     if not violation:
         raise HTTPException(status_code=404, detail="Violation not found")
@@ -475,7 +628,17 @@ def reopen_violation(violation_id: int, db: Session = Depends(get_db)):
 
 @router.get("/violation/{violation_id}/photos")
 def get_violation_photos(violation_id: int, download: bool = False, db: Session = Depends(get_db)):
-    """Return signed URLs for attachments on a Violation, similar to comment photos."""
+    """
+    Get signed URLs for photos attached to a violation.
+
+    Args:
+        violation_id (int): The ID of the violation.
+        download (bool): Whether to set content-disposition for download.
+        db (Session): The database session.
+
+    Returns:
+        list[dict]: A list of photo details.
+    """
     _ensure_storage_init()
     violation = db.query(models.Violation).filter(models.Violation.id == violation_id).first()
     if not violation:
@@ -544,6 +707,20 @@ def get_violation_photos(violation_id: int, download: bool = False, db: Session 
 # Fetch attachments for a specific violation comment
 @router.get("/violation/comment/{comment_id}/attachments")
 def get_violation_comment_attachments(comment_id: int, download: bool = False, db: Session = Depends(get_db)):
+    """
+    Get signed URLs for attachments on a violation comment.
+
+    Args:
+        comment_id (int): The ID of the comment.
+        download (bool): Whether to set content-disposition for download.
+        db (Session): The database session.
+
+    Returns:
+        list[dict]: A list of attachment details.
+
+    Raises:
+        HTTPException: If comment is not found.
+    """
     _ensure_storage_init()
     vc = db.query(models.ViolationComment).filter(models.ViolationComment.id == comment_id).first()
     if not vc:
@@ -590,7 +767,20 @@ async def upload_violation_photos(
     files: List[UploadFile] = File([]),
     db: Session = Depends(get_db),
 ):
-    """Upload attachments for a violation and create ActiveStorage records."""
+    """
+    Upload photos for a violation.
+
+    Args:
+        violation_id (int): The ID of the violation.
+        files (list[UploadFile]): List of files to upload.
+        db (Session): The database session.
+
+    Returns:
+        dict: A dictionary with the list of uploaded files.
+
+    Raises:
+        HTTPException: If violation is not found.
+    """
     _ensure_storage_init()
     violation = db.query(models.Violation).filter(models.Violation.id == violation_id).first()
     if not violation:

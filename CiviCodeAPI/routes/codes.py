@@ -11,6 +11,15 @@ router = APIRouter()
 # Get all codes
 @router.get("/codes/", response_model=List[CodeResponse])
 def get_codes(db: Session = Depends(get_db)):
+    """
+    Get all codes.
+
+    Args:
+        db (Session): The database session.
+
+    Returns:
+        list[CodeResponse]: A list of codes with violation counts.
+    """
     counts = dict(
         db.query(ViolationCode.code_id, func.count(ViolationCode.id))
         .group_by(ViolationCode.code_id)
@@ -41,6 +50,19 @@ def get_codes(db: Session = Depends(get_db)):
 # Create a new code
 @router.post("/codes/", response_model=CodeResponse)
 def create_code(code: CodeCreate, db: Session = Depends(get_db)):
+    """
+    Create a new code.
+
+    Args:
+        code (CodeCreate): Code data.
+        db (Session): The database session.
+
+    Returns:
+        CodeResponse: The created code.
+
+    Raises:
+        HTTPException: If duplicate chapter/section exists.
+    """
     chapter = (code.chapter or '').strip()
     section = (code.section or '').strip()
     if chapter and section:
@@ -61,6 +83,19 @@ def create_code(code: CodeCreate, db: Session = Depends(get_db)):
 # Get a specific code by ID
 @router.get("/codes/{code_id}", response_model=CodeResponse)
 def get_code(code_id: int, db: Session = Depends(get_db)):
+    """
+    Get a code by ID.
+
+    Args:
+        code_id (int): The ID of the code.
+        db (Session): The database session.
+
+    Returns:
+        CodeResponse: The code details including associated violations.
+
+    Raises:
+        HTTPException: If code is not found.
+    """
     code = db.query(Code).filter(Code.id == code_id).first()
     if not code:
         raise HTTPException(status_code=404, detail="Code not found")
@@ -113,6 +148,16 @@ def get_code(code_id: int, db: Session = Depends(get_db)):
 # Delete a code by ID
 @router.delete("/codes/{code_id}", status_code=204)
 def delete_code(code_id: int, db: Session = Depends(get_db)):
+    """
+    Delete a code.
+
+    Args:
+        code_id (int): The ID of the code.
+        db (Session): The database session.
+
+    Raises:
+        HTTPException: If code is not found or deletion fails.
+    """
     code = db.query(Code).filter(Code.id == code_id).first()
     if not code:
         raise HTTPException(status_code=404, detail="Code not found")
@@ -127,6 +172,20 @@ def delete_code(code_id: int, db: Session = Depends(get_db)):
 @router.patch("/codes/{code_id}", response_model=CodeResponse)
 @router.put("/codes/{code_id}", response_model=CodeResponse)
 def update_code(code_id: int, payload: CodeCreate, db: Session = Depends(get_db)):
+    """
+    Update a code.
+
+    Args:
+        code_id (int): The ID of the code.
+        payload (CodeCreate): Updated code data.
+        db (Session): The database session.
+
+    Returns:
+        CodeResponse: The updated code.
+
+    Raises:
+        HTTPException: If code not found or duplicate chapter/section.
+    """
     code = db.query(Code).filter(Code.id == code_id).first()
     if not code:
         raise HTTPException(status_code=404, detail="Code not found")

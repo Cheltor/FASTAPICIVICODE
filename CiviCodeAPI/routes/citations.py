@@ -11,6 +11,20 @@ router = APIRouter()
 # PATCH endpoint to update citation status (and other fields if needed)
 @router.patch("/citations/{citation_id}", response_model=CitationResponse)
 def update_citation_status(citation_id: int, data: dict = Body(...), db: Session = Depends(get_db)):
+    """
+    Update citation status.
+
+    Args:
+        citation_id (int): The ID of the citation.
+        data (dict): Fields to update.
+        db (Session): The database session.
+
+    Returns:
+        CitationResponse: The updated citation.
+
+    Raises:
+        HTTPException: If citation is not found.
+    """
     citation = db.query(Citation).filter(Citation.id == citation_id).first()
     if not citation:
         raise HTTPException(status_code=404, detail="Citation not found")
@@ -35,6 +49,16 @@ def update_citation_status(citation_id: int, data: dict = Body(...), db: Session
 # Get all citations
 @router.get("/citations/", response_model=List[CitationResponse])
 def get_citations(skip: int = 0, db: Session = Depends(get_db)):
+    """
+    Get all citations.
+
+    Args:
+        skip (int): Pagination offset.
+        db (Session): The database session.
+
+    Returns:
+        list[CitationResponse]: A list of citations.
+    """
     citations = (
         db.query(Citation)
         .options(
@@ -69,6 +93,16 @@ def get_citations(skip: int = 0, db: Session = Depends(get_db)):
 # Create a new citation
 @router.post("/citations/", response_model=CitationResponse)
 def create_citation(citation: CitationCreate, db: Session = Depends(get_db)):
+    """
+    Create a new citation.
+
+    Args:
+        citation (CitationCreate): Citation data.
+        db (Session): The database session.
+
+    Returns:
+        CitationResponse: The created citation.
+    """
     new_citation = Citation(**citation.dict())
     db.add(new_citation)
     db.commit()
@@ -88,6 +122,19 @@ def create_citation(citation: CitationCreate, db: Session = Depends(get_db)):
 # Get a specific citation by ID
 @router.get("/citations/{citation_id}", response_model=CitationResponse)
 def get_citation(citation_id: int, db: Session = Depends(get_db)):
+    """
+    Get a citation by ID.
+
+    Args:
+        citation_id (int): The ID of the citation.
+        db (Session): The database session.
+
+    Returns:
+        CitationResponse: The citation details.
+
+    Raises:
+        HTTPException: If citation is not found.
+    """
     citation = db.query(Citation).filter(Citation.id == citation_id).first()
     if not citation:
         raise HTTPException(status_code=404, detail="Citation not found")
@@ -105,6 +152,16 @@ def get_citation(citation_id: int, db: Session = Depends(get_db)):
 
 @router.get("/citations/address/{address_id}", response_model=List[CitationResponse])
 def get_citations_by_address(address_id: int, db: Session = Depends(get_db)):
+    """
+    Get all citations for an address (via violations).
+
+    Args:
+        address_id (int): The ID of the address.
+        db (Session): The database session.
+
+    Returns:
+        list[CitationResponse]: A list of citations.
+    """
     # First, find all violations for the given address_id
     violations = db.query(Violation).filter(Violation.address_id == address_id).all()
 

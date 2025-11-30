@@ -14,6 +14,19 @@ router = APIRouter()
 # Get all contacts for a business
 @router.get("/businesses/{business_id}/contacts", response_model=List[ContactResponse])
 def get_business_contacts(business_id: int, db: Session = Depends(get_db)):
+    """
+    Get all contacts for a business.
+
+    Args:
+        business_id (int): The ID of the business.
+        db (Session): The database session.
+
+    Returns:
+        list[ContactResponse]: A list of contacts.
+
+    Raises:
+        HTTPException: If business is not found.
+    """
     business = db.query(Business).filter(Business.id == business_id).first()
     if not business:
         raise HTTPException(status_code=404, detail="Business not found")
@@ -22,6 +35,20 @@ def get_business_contacts(business_id: int, db: Session = Depends(get_db)):
 # Add a contact (existing or new) to a business
 @router.post("/businesses/{business_id}/contacts", response_model=List[ContactResponse])
 def add_business_contact(business_id: int, contact: dict = Body(...), db: Session = Depends(get_db)):
+    """
+    Add a contact to a business.
+
+    Args:
+        business_id (int): The ID of the business.
+        contact (dict): Contact data.
+        db (Session): The database session.
+
+    Returns:
+        list[ContactResponse]: The updated list of contacts.
+
+    Raises:
+        HTTPException: If business or contact is not found.
+    """
     business = db.query(Business).filter(Business.id == business_id).first()
     if not business:
         raise HTTPException(status_code=404, detail="Business not found")
@@ -54,6 +81,20 @@ def add_business_contact(business_id: int, contact: dict = Body(...), db: Sessio
 # Remove a contact from a business
 @router.delete("/businesses/{business_id}/contacts/{contact_id}", response_model=List[ContactResponse])
 def remove_business_contact(business_id: int, contact_id: int, db: Session = Depends(get_db)):
+    """
+    Remove a contact from a business.
+
+    Args:
+        business_id (int): The ID of the business.
+        contact_id (int): The ID of the contact.
+        db (Session): The database session.
+
+    Returns:
+        list[ContactResponse]: The updated list of contacts.
+
+    Raises:
+        HTTPException: If association is not found.
+    """
     assoc = db.query(BusinessContact).filter_by(business_id=business_id, contact_id=contact_id).first()
     if not assoc:
         raise HTTPException(status_code=404, detail="Contact association not found")
@@ -69,6 +110,17 @@ def search_businesses(
     limit: int = Query(5, ge=1, le=50, description="Limit the number of results"),
     db: Session = Depends(get_db)
 ):
+    """
+    Search for businesses by name, trading name, email, or phone.
+
+    Args:
+        query (str): Search query.
+        limit (int): Max results.
+        db (Session): The database session.
+
+    Returns:
+        list[BusinessResponse]: A list of matching businesses.
+    """
     q = db.query(Business).options(joinedload(Business.address))
     if query and query.strip():
         like = f"%{query}%"
@@ -90,6 +142,16 @@ def search_businesses(
 # Get all businesses
 @router.get("/businesses/", response_model=List[BusinessResponse])
 def get_businesses(skip: int = 0, db: Session = Depends(get_db)):
+    """
+    Get all businesses.
+
+    Args:
+        skip (int): Pagination offset.
+        db (Session): The database session.
+
+    Returns:
+        list[BusinessResponse]: A list of businesses.
+    """
     businesses = (
         db.query(Business)
         .options(joinedload(Business.address))
@@ -138,6 +200,19 @@ def get_businesses(skip: int = 0, db: Session = Depends(get_db)):
 # Create a new business
 @router.post("/businesses/", response_model=BusinessResponse)
 def create_business(business: BusinessCreate, db: Session = Depends(get_db)):
+    """
+    Create a new business.
+
+    Args:
+        business (BusinessCreate): Business data.
+        db (Session): The database session.
+
+    Returns:
+        BusinessResponse: The created business.
+
+    Raises:
+        HTTPException: If duplicates are detected.
+    """
     name = (business.name or '').strip()
     trading = (business.trading_as or '').strip()
     email = (business.email or '').strip()
@@ -191,6 +266,19 @@ def create_business(business: BusinessCreate, db: Session = Depends(get_db)):
 # Get a specific business by ID
 @router.get("/businesses/{business_id}", response_model=BusinessResponse)
 def get_business(business_id: int, db: Session = Depends(get_db)):
+    """
+    Get a business by ID.
+
+    Args:
+        business_id (int): The ID of the business.
+        db (Session): The database session.
+
+    Returns:
+        BusinessResponse: The business details.
+
+    Raises:
+        HTTPException: If business is not found.
+    """
     business = db.query(Business).options(joinedload(Business.address)).filter(Business.id == business_id).first()
     if not business:
         raise HTTPException(status_code=404, detail="Business not found")
@@ -199,6 +287,20 @@ def get_business(business_id: int, db: Session = Depends(get_db)):
 # Update business fields (partial)
 @router.patch("/businesses/{business_id}", response_model=BusinessResponse)
 def update_business(business_id: int, data: dict = Body(...), db: Session = Depends(get_db)):
+    """
+    Update a business (partial update).
+
+    Args:
+        business_id (int): The ID of the business.
+        data (dict): Fields to update.
+        db (Session): The database session.
+
+    Returns:
+        BusinessResponse: The updated business.
+
+    Raises:
+        HTTPException: If business not found or name conflict.
+    """
     business = db.query(Business).filter(Business.id == business_id).first()
     if not business:
         raise HTTPException(status_code=404, detail="Business not found")
@@ -244,6 +346,16 @@ def update_business(business_id: int, data: dict = Body(...), db: Session = Depe
 # Delete a business by ID
 @router.delete("/businesses/{business_id}", status_code=204)
 def delete_business(business_id: int, db: Session = Depends(get_db)):
+    """
+    Delete a business.
+
+    Args:
+        business_id (int): The ID of the business.
+        db (Session): The database session.
+
+    Raises:
+        HTTPException: If business not found or deletion fails.
+    """
     business = db.query(Business).filter(Business.id == business_id).first()
     if not business:
         raise HTTPException(status_code=404, detail="Business not found")

@@ -35,6 +35,16 @@ from utils import get_this_workweek, get_last_workweek
 router = APIRouter()
 
 def _build_condition(column, user_ids):
+    """
+    Helper to build a SQL condition for filtering by user IDs.
+
+    Args:
+        column: The SQLAlchemy column to filter.
+        user_ids (list[int]): The list of user IDs.
+
+    Returns:
+        Condition expression or None.
+    """
     if not user_ids:
         return None
     if len(user_ids) == 1:
@@ -43,10 +53,31 @@ def _build_condition(column, user_ids):
 
 
 def _apply_condition(query, condition):
+    """
+    Helper to apply a filter condition to a query if it exists.
+
+    Args:
+        query: The SQLAlchemy query.
+        condition: The filter condition.
+
+    Returns:
+        Query: The filtered query.
+    """
     return query.filter(condition) if condition is not None else query
 
 
 def _compute_counts(db, user_ids, start_day):
+    """
+    Compute dashboard counts for specified users.
+
+    Args:
+        db (Session): The database session.
+        user_ids (list[int]): List of user IDs to aggregate.
+        start_day (str): Start day of the work week.
+
+    Returns:
+        dict: Dictionary of counts.
+    """
     start_of_this_week, end_of_this_week = get_this_workweek(start_day)
     start_of_last_week, end_of_last_week = get_last_workweek(start_day)
 
@@ -192,6 +223,17 @@ def get_counts(
     start_day: str = Query('mon', description="Week start day: mon|sun|sat"),
     db: Session = Depends(get_db)
 ):
+    """
+    Get counts for a specific user.
+
+    Args:
+        user_id (int): The ID of the user.
+        start_day (str): Start day of the week.
+        db (Session): The database session.
+
+    Returns:
+        dict: Dashboard counts.
+    """
     return _compute_counts(db, [user_id], start_day)
 
 
@@ -201,18 +243,49 @@ def get_counts_for_role(
     start_day: str = Query('mon', description="Week start day: mon|sun|sat"),
     db: Session = Depends(get_db)
 ):
+    """
+    Get aggregated counts for all users with a specific role.
+
+    Args:
+        role (int): The user role ID.
+        start_day (str): Start day of the week.
+        db (Session): The database session.
+
+    Returns:
+        dict: Aggregated dashboard counts.
+    """
     user_ids = [user.id for user in db.query(User).filter(User.role == role).all()]
     return _compute_counts(db, user_ids, start_day)
 
 
 @router.get("/dash/comments/{user_id}", response_model=List[CommentResponse])
 def get_recent_comments(user_id: int, db: Session = Depends(get_db)):
+    """
+    Get recent comments made by a user.
+
+    Args:
+        user_id (int): The ID of the user.
+        db (Session): The database session.
+
+    Returns:
+        list[CommentResponse]: List of recent comments.
+    """
     comments = db.query(Comment).filter(Comment.user_id == user_id).order_by(Comment.updated_at.desc()).limit(10).all()
     return comments
 
 # Get all active violations for a user
 @router.get("/dash/violations/{user_id}", response_model=List[ViolationResponse])
 def get_active_violations(user_id: int, db: Session = Depends(get_db)):
+    """
+    Get active violations assigned to a user.
+
+    Args:
+        user_id (int): The ID of the user.
+        db (Session): The database session.
+
+    Returns:
+        list[ViolationResponse]: List of active violations.
+    """
     violations = (
         db.query(Violation)
         .filter(Violation.user_id == user_id, Violation.status == 0)
@@ -234,6 +307,16 @@ def get_active_violations(user_id: int, db: Session = Depends(get_db)):
 
 @router.get("/dash/recent", response_model=RecentActivityResponse)
 def get_recent_activity(limit: int = Query(5, ge=1, le=50), db: Session = Depends(get_db)):
+    """
+    Get recent activity across the system.
+
+    Args:
+        limit (int): Number of items to retrieve per category.
+        db (Session): The database session.
+
+    Returns:
+        RecentActivityResponse: Recent comments, inspections, complaints, licenses, permits, and violations.
+    """
     size = max(1, min(limit, 50))
 
     comments = (
@@ -357,6 +440,15 @@ def get_recent_activity(limit: int = Query(5, ge=1, le=50), db: Session = Depend
 
 @router.get("/dash/oas/overview", response_model=OasDashboardResponse)
 def get_oas_dashboard_overview(db: Session = Depends(get_db)):
+    """
+    Get OAS dashboard overview data.
+
+    Args:
+        db (Session): The database session.
+
+    Returns:
+        OasDashboardResponse: Overview metrics and lists.
+    """
     PAGE_LIMIT = 10
     closed_statuses = {"satisfactory", "no violation found", "closed", "completed", "resolved"}
     status_lower = func.lower(Inspection.status)
@@ -464,6 +556,16 @@ def get_oas_dashboard_overview(db: Session = Depends(get_db)):
 # Get all inspections for a user where the status is not 2 (completed)
 @router.get("/dash/inspections/{user_id}", response_model=List[InspectionResponse])
 def get_inspections(user_id: int, db: Session = Depends(get_db)):
+    """
+    Get pending inspections for a user.
+
+    Args:
+        user_id (int): The ID of the inspector.
+        db (Session): The database session.
+
+    Returns:
+        list[InspectionResponse]: List of pending inspections.
+    """
     inspections = db.query(Inspection).filter(Inspection.inspector_id == user_id, Inspection.status.is_(None)).all()
     return inspections
 

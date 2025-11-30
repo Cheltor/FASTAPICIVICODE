@@ -36,7 +36,20 @@ class AssistantChatResponse(BaseModel):
 
 @router.post("/assistant/chat", response_model=AssistantChatResponse)
 async def create_assistant_chat(payload: AssistantChatRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> AssistantChatResponse:
-    """Proxy user messages to the configured AI assistant."""
+    """
+    Proxy user messages to the configured AI assistant.
+
+    Args:
+        payload (AssistantChatRequest): User message and thread ID.
+        current_user (User): The authenticated user.
+        db (Session): The database session.
+
+    Returns:
+        AssistantChatResponse: The assistant's reply and thread ID.
+
+    Raises:
+        HTTPException: If configuration missing, timeout, or upstream error.
+    """
     try:
         reply, thread_id = await run_assistant(payload.message, payload.thread_id, db)
     except GeminiConfigError as exc:
@@ -87,6 +100,17 @@ async def evaluate_image(
 ):
     """
     Evaluate uploaded images for potential code violations.
+
+    Args:
+        files (list[UploadFile]): List of image files.
+        db (Session): The database session.
+        current_user (User): The authenticated user.
+
+    Returns:
+        dict: The analysis result (JSON).
+
+    Raises:
+        HTTPException: If disabled, invalid images, or analysis fails.
     """
     # Check if enabled
     setting = db.query(models.AppSetting).filter(models.AppSetting.key == "image_analysis_enabled").first()

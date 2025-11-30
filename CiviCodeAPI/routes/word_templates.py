@@ -11,6 +11,19 @@ router = APIRouter()
 
 @router.get("/violation/{violation_id}/notice")
 def generate_violation_notice(violation_id: int, db: Session = Depends(get_db)):
+    """
+    Generate a violation notice document (Word/DOCX).
+
+    Args:
+        violation_id (int): The ID of the violation.
+        db (Session): The database session.
+
+    Returns:
+        Response: The generated DOCX file.
+
+    Raises:
+        HTTPException: If violation is not found.
+    """
     violation = (
         db.query(Violation)
         .filter(Violation.id == violation_id)
@@ -64,6 +77,19 @@ def generate_violation_notice(violation_id: int, db: Session = Depends(get_db)):
 
 @router.get("/violation/{violation_id}/compliance-letter")
 def generate_compliance_letter(violation_id: int, db: Session = Depends(get_db)):
+    """
+    Generate a compliance letter document (Word/DOCX).
+
+    Args:
+        violation_id (int): The ID of the violation.
+        db (Session): The database session.
+
+    Returns:
+        Response: The generated DOCX file.
+
+    Raises:
+        HTTPException: If violation is not found.
+    """
     violation = (
         db.query(Violation)
         .filter(Violation.id == violation_id)
@@ -133,6 +159,19 @@ def generate_compliance_letter(violation_id: int, db: Session = Depends(get_db))
 
 @router.get("/license/{license_id}/download")
 def generate_license_document(license_id: int, db: Session = Depends(get_db)):
+    """
+    Generate a license document (Word/DOCX).
+
+    Args:
+        license_id (int): The ID of the license.
+        db (Session): The database session.
+
+    Returns:
+        Response: The generated DOCX file.
+
+    Raises:
+        HTTPException: If license is not found or template is missing.
+    """
     lic = (
         db.query(License)
         .filter(License.id == license_id)

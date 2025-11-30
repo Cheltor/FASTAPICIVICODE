@@ -1,3 +1,11 @@
+"""
+Main application entry point.
+
+This module initializes the FastAPI application, configures middleware (CORS),
+includes routers for various API endpoints, and handles application lifespan events
+(startup/shutdown).
+"""
+
 import os
 import logging
 from dotenv import load_dotenv
@@ -21,6 +29,18 @@ import uvicorn
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """
+    Handle application lifespan events.
+
+    This context manager handles logic that needs to run on application startup
+    and shutdown.
+
+    Args:
+        app (FastAPI): The FastAPI application instance.
+
+    Yields:
+        None: Yields control back to the application.
+    """
     # Startup logic
     logging.info("App startup event")
     yield
@@ -101,6 +121,12 @@ app.add_middleware(
 # Root endpoint for testing
 @app.get("/")
 def read_root():
+    """
+    Root endpoint for health check or testing.
+
+    Returns:
+        dict: A welcome message indicating the API is running.
+    """
     return {"message": "Welcome to the Address API"}
 
 # Run the application (for development)

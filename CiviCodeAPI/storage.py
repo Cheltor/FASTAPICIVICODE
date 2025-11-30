@@ -1,4 +1,11 @@
-# storage.py
+"""
+Azure Blob Storage client configuration and initialization.
+
+This module handles the lazy initialization of the Azure Blob Service client to
+allow the application to start even if storage credentials are not immediately
+available (e.g., during testing or build phases).
+"""
+
 import os
 from azure.storage.blob import BlobServiceClient
 from dotenv import load_dotenv
@@ -12,6 +19,15 @@ _container_client = None
 
 
 def _parse_conn_str(conn_str: str):
+    """
+    Parse an Azure Storage connection string into a dictionary.
+
+    Args:
+        conn_str (str): The connection string.
+
+    Returns:
+        dict: Parsed key-value pairs.
+    """
     params = {}
     for part in conn_str.split(';'):
         if not part:
@@ -23,7 +39,13 @@ def _parse_conn_str(conn_str: str):
 
 
 def _init_clients():
-    """Initialize Azure Blob clients. Raises descriptive errors if configuration is missing."""
+    """
+    Initialize Azure Blob clients.
+
+    Raises:
+        ValueError: If configuration is missing.
+        RuntimeError: If client initialization fails.
+    """
     global _blob_service_client, _container_client, account_name, account_key
     if _blob_service_client and _container_client:
         return
@@ -55,7 +77,11 @@ def _init_clients():
     account_key = params.get('AccountKey')
 
 def ensure_initialized():
-    """Public helper to guarantee blob clients and account metadata are ready."""
+    """
+    Public helper to guarantee blob clients and account metadata are ready.
+
+    Ensures that the Azure clients are initialized before use.
+    """
     _init_clients()
 
 

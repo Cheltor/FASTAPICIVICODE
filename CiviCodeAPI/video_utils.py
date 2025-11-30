@@ -14,8 +14,17 @@ def _run_ffmpeg(args: list[str]) -> None:
 def transcode_to_mp4_and_poster(data: bytes) -> Tuple[bytes, Optional[bytes]]:
     """
     Transcode source video bytes (e.g., MOV/HEVC) to H.264/AAC MP4 and extract a poster JPEG.
-    Returns (mp4_bytes, poster_jpeg_bytes | None).
+
     Requires ffmpeg available on PATH.
+
+    Args:
+        data (bytes): The source video bytes.
+
+    Returns:
+        tuple[bytes, bytes | None]: A tuple containing the MP4 bytes and optional poster bytes.
+
+    Raises:
+        RuntimeError: If ffmpeg fails.
     """
     with tempfile.TemporaryDirectory() as td:
         src = os.path.join(td, "in.mov")

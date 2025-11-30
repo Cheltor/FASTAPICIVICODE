@@ -23,6 +23,13 @@ def ensure_blob_browser_safe(db: Session, blob_row: ActiveStorageBlob) -> Active
     upload alongside the original, update DB to point to the new blob, and return the updated row.
 
     Idempotent: if already browser-safe, returns immediately.
+
+    Args:
+        db (Session): The database session.
+        blob_row (ActiveStorageBlob): The blob record to verify/convert.
+
+    Returns:
+        ActiveStorageBlob: The updated blob record pointing to browser-safe media.
     """
     ct = (blob_row.content_type or "").lower()
     filename = blob_row.filename or ""

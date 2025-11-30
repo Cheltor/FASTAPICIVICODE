@@ -10,6 +10,16 @@ router = APIRouter()
 
 @router.get("/permits/", response_model=List[PermitResponse])
 def get_permits(inspection_id: Optional[int] = None, db: Session = Depends(get_db)):
+    """
+    Get all permits, optionally filtered by inspection ID.
+
+    Args:
+        inspection_id (int, optional): Filter by inspection ID.
+        db (Session): The database session.
+
+    Returns:
+        list[PermitResponse]: A list of permits.
+    """
     q = db.query(Permit)
     if inspection_id is not None:
         q = q.filter(Permit.inspection_id == inspection_id)
@@ -36,6 +46,16 @@ def get_permits(inspection_id: Optional[int] = None, db: Session = Depends(get_d
 
 @router.post("/permits/", response_model=PermitResponse)
 def create_permit(permit_in: PermitCreate, db: Session = Depends(get_db)):
+    """
+    Create a new permit.
+
+    Args:
+        permit_in (PermitCreate): Permit data.
+        db (Session): The database session.
+
+    Returns:
+        PermitResponse: The created permit.
+    """
     # avoid duplicate for same inspection
     existing = db.query(Permit).filter(Permit.inspection_id == permit_in.inspection_id).first()
     if existing:
@@ -48,6 +68,19 @@ def create_permit(permit_in: PermitCreate, db: Session = Depends(get_db)):
 
 @router.get("/permits/{permit_id}", response_model=PermitResponse)
 def get_permit(permit_id: int, db: Session = Depends(get_db)):
+    """
+    Get a permit by ID.
+
+    Args:
+        permit_id (int): The ID of the permit.
+        db (Session): The database session.
+
+    Returns:
+        PermitResponse: The permit details.
+
+    Raises:
+        HTTPException: If permit is not found.
+    """
     permit = db.query(Permit).filter(Permit.id == permit_id).first()
     if not permit:
         raise HTTPException(status_code=404, detail="Permit not found")
@@ -69,6 +102,16 @@ def get_permit(permit_id: int, db: Session = Depends(get_db)):
 # Important: if there are no permits for the address, return an empty list (200), not a 404.
 @router.get("/permits/address/{address_id}", response_model=List[PermitResponse])
 def get_permits_by_address(address_id: int, db: Session = Depends(get_db)):
+    """
+    Get permits for an address (via linked inspections).
+
+    Args:
+        address_id (int): The ID of the address.
+        db (Session): The database session.
+
+    Returns:
+        list[PermitResponse]: A list of permits.
+    """
     # Find all inspection ids for this address
     insp_rows = db.query(Inspection.id).filter(Inspection.address_id == address_id).all()
     insp_ids = [r.id for r in insp_rows]
@@ -108,6 +151,20 @@ def get_permits_by_address(address_id: int, db: Session = Depends(get_db)):
 
 @router.put("/permits/{permit_id}", response_model=PermitResponse)
 def update_permit(permit_id: int, permit_in: PermitUpdate, db: Session = Depends(get_db)):
+    """
+    Update a permit.
+
+    Args:
+        permit_id (int): The ID of the permit.
+        permit_in (PermitUpdate): Updated data.
+        db (Session): The database session.
+
+    Returns:
+        PermitResponse: The updated permit.
+
+    Raises:
+        HTTPException: If permit is not found or update fails.
+    """
     permit = db.query(Permit).filter(Permit.id == permit_id).first()
     if not permit:
         raise HTTPException(status_code=404, detail="Permit not found")
@@ -147,6 +204,16 @@ def update_permit(permit_id: int, permit_in: PermitUpdate, db: Session = Depends
 # Delete a permit by ID
 @router.delete("/permits/{permit_id}", status_code=204)
 def delete_permit(permit_id: int, db: Session = Depends(get_db)):
+    """
+    Delete a permit.
+
+    Args:
+        permit_id (int): The ID of the permit.
+        db (Session): The database session.
+
+    Raises:
+        HTTPException: If permit not found or deletion fails.
+    """
     permit = db.query(Permit).filter(Permit.id == permit_id).first()
     if not permit:
         raise HTTPException(status_code=404, detail="Permit not found")

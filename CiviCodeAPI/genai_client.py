@@ -28,12 +28,13 @@ def _configure_gemini() -> None:
 def search_codes(db: Session, query: str) -> str:
     """
     Search for codes in the database based on a query string.
-    
+
     Args:
-        query: The search query to find relevant codes.
-        
+        db (Session): The database session.
+        query (str): The search query to find relevant codes.
+
     Returns:
-        A JSON string containing a list of matching codes with their details.
+        str: A JSON string containing a list of matching codes with their details.
     """
     try:
         # Perform a case-insensitive search on name, description, chapter, or section
@@ -82,6 +83,12 @@ def search_codes(db: Session, query: str) -> str:
 def _extract_cited_code_ids(message: str) -> List[int]:
     """
     Find all code IDs cited in the assistant's reply using the [Code: <id>] pattern.
+
+    Args:
+        message (str): The assistant's reply text.
+
+    Returns:
+        list[int]: A list of unique code IDs cited in the message.
     """
     if not message:
         return []
@@ -96,6 +103,12 @@ def _extract_cited_code_ids(message: str) -> List[int]:
 def _format_reference_line(code: Code) -> str:
     """
     Build a human-readable reference string for a code entry.
+
+    Args:
+        code (Code): The code object to format.
+
+    Returns:
+        str: A formatted string summarizing the code chapter, section, and name/description.
     """
     location_parts = []
     if code.chapter:
@@ -111,7 +124,15 @@ def _format_reference_line(code: Code) -> str:
 def _apply_reference_guards(raw_reply: str, db: Session) -> str:
     """
     Ensure every cited code exists in the database and append a verified References section.
+
     Unknown codes are called out explicitly so we never silently cite a missing record.
+
+    Args:
+        raw_reply (str): The raw reply from the assistant.
+        db (Session): The database session.
+
+    Returns:
+        str: The processed reply with a verified "References" section appended.
     """
     cited_ids = _extract_cited_code_ids(raw_reply)
     if not cited_ids:
@@ -151,6 +172,13 @@ def _apply_reference_guards(raw_reply: str, db: Session) -> str:
 def _get_history(db: Session, thread_id: str) -> List[dict]:
     """
     Retrieve chat history for a given thread ID.
+
+    Args:
+        db (Session): The database session.
+        thread_id (str): The thread ID.
+
+    Returns:
+        list[dict]: A list of chat history objects compatible with the Gemini API.
     """
     if not thread_id:
         return []
@@ -172,14 +200,18 @@ async def run_assistant(
 ) -> Tuple[str, str]:
     """
     Send a user message to Gemini and return the reply.
-    
+
     Args:
-        message: The user's message.
-        thread_id: Optional existing thread identifier.
-        db: Database session for tool execution and history retrieval.
-        
+        message (str): The user's message.
+        thread_id (str, optional): Optional existing thread identifier.
+        db (Session): Database session for tool execution and history retrieval.
+
     Returns:
-        A tuple of (assistant_reply, thread_id).
+        tuple[str, str]: A tuple of (assistant_reply, thread_id).
+
+    Raises:
+        ValueError: If db session is missing.
+        RuntimeError: If Gemini API fails.
     """
     if not db:
         raise ValueError("Database session is required for Gemini assistant.")
@@ -295,7 +327,14 @@ def _validate_evaluation_json(json_str: str, db: Session, num_images: int = 0) -
     """
     Parses the evaluation JSON, verifies that all cited code_ids exist in the DB,
     and removes invalid code_ids to prevent broken links.
-    Returns the cleaned JSON string.
+
+    Args:
+        json_str (str): The raw JSON string from the model.
+        db (Session): The database session.
+        num_images (int): Number of images analyzed (for index validation).
+
+    Returns:
+        str: The cleaned JSON string.
     """
     try:
         # Use regex to find the first JSON object in the string
@@ -360,13 +399,16 @@ async def evaluate_image_for_violation(
 ) -> str:
     """
     Analyze images for potential code violations using Gemini Vision and RAG.
-    
+
     Args:
-        images_data: List of (image_bytes, mime_type) tuples.
-        db: Database session.
-        
+        images_data (list[tuple[bytes, str]]): List of (image_bytes, mime_type) tuples.
+        db (Session): Database session.
+
     Returns:
-        JSON string with analysis results.
+        str: JSON string with analysis results.
+
+    Raises:
+        RuntimeError: If analysis fails.
     """
     _configure_gemini()
     

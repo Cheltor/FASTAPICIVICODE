@@ -19,6 +19,17 @@ def get_contacts(
     search: str = Query(None, description="Search term for contact name, email, or phone"),
     db: Session = Depends(get_db)
 ):
+    """
+    Get all contacts, optionally filtered by a search term.
+
+    Args:
+        skip (int): Pagination offset.
+        search (str): Search term.
+        db (Session): The database session.
+
+    Returns:
+        list[ContactResponse]: A list of contacts.
+    """
     query = db.query(Contact)
     if search and search.strip():
         like = f"%{search}%"
@@ -35,6 +46,19 @@ def get_contacts(
 # Create a new contact
 @router.post("/contacts/", response_model=ContactResponse)
 def create_contact(contact: ContactCreate, db: Session = Depends(get_db)):
+        """
+        Create a new contact.
+
+        Args:
+            contact (ContactCreate): Contact data.
+            db (Session): The database session.
+
+        Returns:
+            ContactResponse: The created contact.
+
+        Raises:
+            HTTPException: If duplicate name, email, or phone is found.
+        """
         name = (contact.name or '').strip()
         if name:
             name_conflict = (
@@ -81,6 +105,17 @@ def search_contacts(
     limit: int = Query(5, ge=1, le=50, description="Limit the number of results"),
     db: Session = Depends(get_db),
 ):
+    """
+    Search for contacts.
+
+    Args:
+        query (str): Search term.
+        limit (int): Max results.
+        db (Session): The database session.
+
+    Returns:
+        list[ContactResponse]: A list of matching contacts.
+    """
     search_term = (query or "").strip()
     like_pattern = f"%{search_term}%"
     filters = [
@@ -127,6 +162,19 @@ def search_contacts(
 # Get a specific contact by ID
 @router.get("/contacts/{contact_id}", response_model=ContactDetailResponse)
 def get_contact(contact_id: int, db: Session = Depends(get_db)):
+    """
+    Get a contact by ID with detailed related info.
+
+    Args:
+        contact_id (int): The ID of the contact.
+        db (Session): The database session.
+
+    Returns:
+        ContactDetailResponse: The contact details including related records.
+
+    Raises:
+        HTTPException: If contact is not found.
+    """
     contact = (
         db.query(Contact)
         .options(
@@ -164,6 +212,20 @@ def get_contact(contact_id: int, db: Session = Depends(get_db)):
 # Update an existing contact
 @router.put("/contacts/{contact_id}", response_model=ContactResponse)
 def update_contact(contact_id: int, contact: ContactCreate = Body(...), db: Session = Depends(get_db)):
+    """
+    Update a contact.
+
+    Args:
+        contact_id (int): The ID of the contact.
+        contact (ContactCreate): The updated contact data.
+        db (Session): The database session.
+
+    Returns:
+        ContactResponse: The updated contact.
+
+    Raises:
+        HTTPException: If contact not found or name conflict.
+    """
     db_contact = db.query(Contact).filter(Contact.id == contact_id).first()
     if not db_contact:
         raise HTTPException(status_code=404, detail="Contact not found")
@@ -193,6 +255,16 @@ def update_contact(contact_id: int, contact: ContactCreate = Body(...), db: Sess
 # Delete a contact by ID
 @router.delete("/contacts/{contact_id}", status_code=204)
 def delete_contact(contact_id: int, db: Session = Depends(get_db)):
+    """
+    Delete a contact.
+
+    Args:
+        contact_id (int): The ID of the contact.
+        db (Session): The database session.
+
+    Raises:
+        HTTPException: If contact not found or deletion fails.
+    """
     contact = db.query(Contact).filter(Contact.id == contact_id).first()
     if not contact:
         raise HTTPException(status_code=404, detail="Contact not found")

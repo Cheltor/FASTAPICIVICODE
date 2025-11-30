@@ -17,6 +17,18 @@ ALGORITHM = "HS256"
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
 
 def _get_current_user_id(token: str = Depends(oauth2_scheme)) -> int:
+    """
+    Get the current user ID from the token.
+
+    Args:
+        token (str): OAuth2 token.
+
+    Returns:
+        int: User ID.
+
+    Raises:
+        HTTPException: If token is invalid.
+    """
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         return int(payload.get("sub"))
@@ -26,6 +38,16 @@ def _get_current_user_id(token: str = Depends(oauth2_scheme)) -> int:
 router = APIRouter()
 
 def _decorate_origin(db: Session, notif: Notification) -> NotificationResponse:
+    """
+    Add origin details (type, label, url) to a notification response.
+
+    Args:
+        db (Session): The database session.
+        notif (Notification): The notification object.
+
+    Returns:
+        NotificationResponse: The decorated response.
+    """
     origin_type = None
     origin_label = None
     origin_url_path = None
@@ -90,6 +112,16 @@ def _decorate_origin(db: Session, notif: Notification) -> NotificationResponse:
 
 @router.get("/notifications", response_model=List[NotificationResponse])
 def list_notifications(db: Session = Depends(get_db), current_user_id: int = Depends(_get_current_user_id)):
+    """
+    List notifications for the current user.
+
+    Args:
+        db (Session): The database session.
+        current_user_id (int): ID of the current user.
+
+    Returns:
+        list[NotificationResponse]: List of notifications.
+    """
     notifications = (
         db.query(Notification)
         .filter(Notification.user_id == current_user_id)
@@ -101,6 +133,20 @@ def list_notifications(db: Session = Depends(get_db), current_user_id: int = Dep
 
 @router.post("/notifications", response_model=NotificationResponse, status_code=status.HTTP_201_CREATED)
 def create_notification(payload: NotificationCreate, db: Session = Depends(get_db), current_user_id: int = Depends(_get_current_user_id)):
+    """
+    Create a new notification (self only).
+
+    Args:
+        payload (NotificationCreate): Notification data.
+        db (Session): The database session.
+        current_user_id (int): ID of the current user.
+
+    Returns:
+        NotificationResponse: The created notification.
+
+    Raises:
+        HTTPException: If inspection/user not found or creating for another user.
+    """
     # basic validation: inspection_id is optional now; comment_id is optional as well
     if payload.inspection_id:
         inspection = db.query(Inspection).filter(Inspection.id == payload.inspection_id).first()
@@ -140,6 +186,20 @@ def create_notification(payload: NotificationCreate, db: Session = Depends(get_d
 
 @router.get("/notifications/{notification_id}", response_model=NotificationResponse)
 def get_notification(notification_id: int, db: Session = Depends(get_db), current_user_id: int = Depends(_get_current_user_id)):
+    """
+    Get a specific notification.
+
+    Args:
+        notification_id (int): Notification ID.
+        db (Session): The database session.
+        current_user_id (int): ID of the current user.
+
+    Returns:
+        NotificationResponse: The notification.
+
+    Raises:
+        HTTPException: If notification not found.
+    """
     notif = db.query(Notification).filter(Notification.id == notification_id, Notification.user_id == current_user_id).first()
     if not notif:
         raise HTTPException(status_code=404, detail="Notification not found")
@@ -147,6 +207,20 @@ def get_notification(notification_id: int, db: Session = Depends(get_db), curren
 
 @router.patch("/notifications/{notification_id}/read", response_model=NotificationResponse)
 def mark_notification_read(notification_id: int, db: Session = Depends(get_db), current_user_id: int = Depends(_get_current_user_id)):
+    """
+    Mark a notification as read.
+
+    Args:
+        notification_id (int): Notification ID.
+        db (Session): The database session.
+        current_user_id (int): ID of the current user.
+
+    Returns:
+        NotificationResponse: The updated notification.
+
+    Raises:
+        HTTPException: If notification not found.
+    """
     notif = db.query(Notification).filter(Notification.id == notification_id, Notification.user_id == current_user_id).first()
     if not notif:
         raise HTTPException(status_code=404, detail="Notification not found")
@@ -157,6 +231,17 @@ def mark_notification_read(notification_id: int, db: Session = Depends(get_db), 
 
 @router.delete("/notifications/{notification_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_notification(notification_id: int, db: Session = Depends(get_db), current_user_id: int = Depends(_get_current_user_id)):
+    """
+    Delete a notification.
+
+    Args:
+        notification_id (int): Notification ID.
+        db (Session): The database session.
+        current_user_id (int): ID of the current user.
+
+    Raises:
+        HTTPException: If notification not found.
+    """
     notif = db.query(Notification).filter(Notification.id == notification_id, Notification.user_id == current_user_id).first()
     if not notif:
         raise HTTPException(status_code=404, detail="Notification not found")
@@ -166,6 +251,16 @@ def delete_notification(notification_id: int, db: Session = Depends(get_db), cur
 
 @router.patch("/notifications/read-all", response_model=int)
 def mark_all_notifications_read(db: Session = Depends(get_db), current_user_id: int = Depends(_get_current_user_id)):
+    """
+    Mark all notifications as read for the current user.
+
+    Args:
+        db (Session): The database session.
+        current_user_id (int): ID of the current user.
+
+    Returns:
+        int: Number of notifications updated.
+    """
     updated = (
         db.query(Notification)
         .filter(Notification.user_id == current_user_id, Notification.read == False)
@@ -182,6 +277,20 @@ class TestEmailRequest(BaseModel):
 
 @router.post("/notifications/test-email")
 def send_test_email(payload: TestEmailRequest, db: Session = Depends(get_db), current_user_id: int = Depends(_get_current_user_id)):
+    """
+    Send a test email notification.
+
+    Args:
+        payload (TestEmailRequest): Test parameters.
+        db (Session): The database session.
+        current_user_id (int): ID of the current user.
+
+    Returns:
+        dict: Result of the operation.
+
+    Raises:
+        HTTPException: If no recipient found.
+    """
     # Determine target user: TEST_EMAIL_USER_ID override or current user
     override_id = os.getenv("TEST_EMAIL_USER_ID")
     target_id = int(override_id) if override_id else int(current_user_id)

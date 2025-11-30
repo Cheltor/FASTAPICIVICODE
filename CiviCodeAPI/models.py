@@ -14,6 +14,17 @@ Base = declarative_base()
 
 # Small table for application-wide settings (key/value)
 class AppSetting(Base):
+    """
+    Application-wide settings.
+
+    Stores key-value pairs for global application configuration that can be
+    modified at runtime.
+
+    Attributes:
+        key (str): The unique key for the setting.
+        value (str): The value of the setting.
+        updated_at (datetime): The timestamp when the setting was last updated.
+    """
     __tablename__ = "app_settings"
 
     key = Column(String, primary_key=True, index=True)
@@ -23,6 +34,20 @@ class AppSetting(Base):
 
 # Audit history for app settings
 class AppSettingAudit(Base):
+    """
+    Audit log for application settings changes.
+
+    Tracks changes made to `AppSetting` records for accountability.
+
+    Attributes:
+        id (int): The primary key.
+        key (str): The key of the setting that changed.
+        old_value (str): The previous value of the setting.
+        new_value (str): The new value of the setting.
+        changed_by (int): The ID of the user who made the change.
+        changed_at (datetime): The timestamp when the change occurred.
+        user (User): The user object who made the change.
+    """
     __tablename__ = 'app_settings_audit'
 
     id = Column(BigInteger, primary_key=True, index=True)
@@ -37,6 +62,18 @@ class AppSettingAudit(Base):
 
 # Chat logs for assistant interactions
 class ChatLog(Base):
+    """
+    Logs of interactions with the AI assistant.
+
+    Attributes:
+        id (int): The primary key.
+        user_id (int): The ID of the user initiating the chat.
+        thread_id (str): The thread ID used by the OpenAI Assistant API.
+        user_message (str): The message sent by the user.
+        assistant_reply (str): The reply received from the assistant.
+        created_at (datetime): The timestamp of the interaction.
+        user (User): The user object.
+    """
     __tablename__ = 'chat_logs'
 
     id = Column(BigInteger, primary_key=True, index=True)
@@ -50,6 +87,20 @@ class ChatLog(Base):
 
 # Image Analysis Logs
 class ImageAnalysisLog(Base):
+    """
+    Logs of image analysis operations.
+
+    Tracks the results of automated image analysis tasks.
+
+    Attributes:
+        id (int): The primary key.
+        user_id (int): The ID of the user who requested the analysis.
+        image_count (int): The number of images analyzed.
+        result (str): JSON string containing the analysis results.
+        status (str): The status of the analysis job.
+        created_at (datetime): The timestamp when the log was created.
+        user (User): The user object.
+    """
     __tablename__ = 'image_analysis_logs'
 
     id = Column(BigInteger, primary_key=True, index=True)
@@ -66,6 +117,20 @@ class ImageAnalysisLog(Base):
 
 # ActiveStorageAttachments
 class ActiveStorageAttachment(Base):
+    """
+    Represents an attachment in Active Storage.
+
+    Links a record (like an Inspection or Violation) to a Blob (the actual file).
+    Modeled after Rails ActiveStorage.
+
+    Attributes:
+        id (int): The primary key.
+        name (str): The name of the attachment.
+        record_type (str): The type of the record being attached to (e.g., "Inspection").
+        record_id (int): The ID of the record being attached to.
+        blob_id (int): The ID of the associated blob.
+        created_at (datetime): The creation timestamp.
+    """
     __tablename__ = "active_storage_attachments"
 
     id = Column(BigInteger, primary_key=True, index=True)
@@ -77,6 +142,22 @@ class ActiveStorageAttachment(Base):
 
 # ActiveStorageBlobs
 class ActiveStorageBlob(Base):
+    """
+    Represents a file blob in Active Storage.
+
+    Stores metadata about the file, such as filename, content type, and storage key.
+
+    Attributes:
+        id (int): The primary key.
+        key (str): The unique key used to retrieve the file from the storage service.
+        filename (str): The original name of the file.
+        content_type (str): The MIME type of the file.
+        meta_data (str): Additional metadata (e.g., width, height).
+        service_name (str): The name of the storage service (e.g., "azure").
+        byte_size (int): The size of the file in bytes.
+        checksum (str): The file checksum.
+        created_at (datetime): The creation timestamp.
+    """
     __tablename__ = "active_storage_blobs"
 
     id = Column(BigInteger, primary_key=True, index=True)
@@ -91,6 +172,16 @@ class ActiveStorageBlob(Base):
 
 # ActiveStorageVariantRecords
 class ActiveStorageVariantRecord(Base):
+    """
+    Represents a variant of an Active Storage blob.
+
+    Used for storing information about processed versions of files (e.g., resized images).
+
+    Attributes:
+        id (int): The primary key.
+        blob_id (int): The ID of the original blob.
+        variation_digest (str): A digest representing the variation parameters.
+    """
     __tablename__ = "active_storage_variant_records"
 
     id = Column(BigInteger, primary_key=True, index=True)
@@ -99,6 +190,47 @@ class ActiveStorageVariantRecord(Base):
 
 # Addresses
 class Address(Base):
+    """
+    Represents a physical address.
+
+    Attributes:
+        id (int): Primary key.
+        pid (str): Property ID.
+        ownername (str): Owner's name.
+        owneraddress (str): Owner's address.
+        ownercity (str): Owner's city.
+        ownerstate (str): Owner's state.
+        ownerzip (str): Owner's ZIP code.
+        streetnumb (str): Street number.
+        streetname (str): Street name.
+        streettype (str): Street type.
+        landusecode (str): Land use code.
+        zoning (str): Zoning code.
+        owneroccupiedin (str): Owner occupied indicator.
+        vacant (str): Vacancy status.
+        absent (str): Absentee owner indicator.
+        premisezip (str): Premise ZIP code.
+        combadd (str): Combined address string.
+        outstanding (bool): Outstanding status.
+        name (str): Name associated with the address.
+        proptype (int): Property type code.
+        property_type (str): Property type description.
+        property_name (str): Property name.
+        aka (str): Also known as.
+        district (str): District name.
+        property_id (str): Alternate property ID.
+        vacancy_status (str): Current vacancy status.
+        latitude (float): Latitude coordinate.
+        longitude (float): Longitude coordinate.
+        created_at (datetime): Creation timestamp.
+        updated_at (datetime): Update timestamp.
+        inspections (list[Inspection]): Related inspections.
+        comments (list[Comment]): Related comments.
+        violations (list[Violation]): Related violations.
+        businesses (list[Business]): Related businesses.
+        address_contacts (list[AddressContact]): Link table to contacts.
+        contacts (list[Contact]): Related contacts.
+    """
     __tablename__ = "addresses"
 
     id = Column(BigInteger, primary_key=True, index=True)
@@ -142,6 +274,18 @@ class Address(Base):
 
 # AddressContacts
 class AddressContact(Base):
+    """
+    Association table between Address and Contact.
+
+    Attributes:
+        id (int): Primary key.
+        address_id (int): Foreign key to the Address table.
+        contact_id (int): Foreign key to the Contact table.
+        created_at (datetime): Creation timestamp.
+        updated_at (datetime): Update timestamp.
+        address (Address): Associated address.
+        contact (Contact): Associated contact.
+    """
     __tablename__ = "address_contacts"
 
     id = Column(BigInteger, primary_key=True, index=True)
@@ -156,6 +300,23 @@ class AddressContact(Base):
 
 # Areas
 class Area(Base):
+    """
+    Represents an area within an inspection (e.g., a specific room or location).
+
+    Attributes:
+        id (int): Primary key.
+        name (str): Name of the area.
+        notes (str): Notes about the area.
+        photos (str): URLs or references to photos of the area.
+        inspection_id (int): Foreign key to the Inspection table.
+        floor (int): Floor number.
+        unit_id (int): Foreign key to the Unit table.
+        created_at (datetime): Creation timestamp.
+        updated_at (datetime): Update timestamp.
+        inspection (Inspection): Associated inspection.
+        unit (Unit): Associated unit.
+        observations (list[Observation]): Observations made in this area.
+    """
     __tablename__ = "areas"
 
     id = Column(BigInteger, primary_key=True, index=True)
@@ -175,6 +336,18 @@ class Area(Base):
 
 # AreaCodes
 class AreaCode(Base):
+    """
+    Link table between Area and Code.
+
+    Associates a specific code with an area.
+
+    Attributes:
+        id (int): Primary key.
+        area_id (int): Foreign key to the Area table.
+        code_id (int): Foreign key to the Code table.
+        created_at (datetime): Creation timestamp.
+        updated_at (datetime): Update timestamp.
+    """
     __tablename__ = "area_codes"
 
     id = Column(BigInteger, primary_key=True, index=True)
@@ -186,6 +359,27 @@ class AreaCode(Base):
 
 # Businesses
 class Business(Base):
+    """
+    Represents a business entity.
+
+    Attributes:
+        id (int): Primary key.
+        name (str): Business name.
+        address_id (int): Foreign key to the Address table.
+        unit_id (int): Foreign key to the Unit table.
+        website (str): Website URL.
+        email (str): Contact email.
+        phone (str): Contact phone.
+        trading_as (str): DBA name.
+        is_closed (bool): Whether the business is closed.
+        opened_on (date): Opening date.
+        employee_count (int): Number of employees.
+        created_at (datetime): Creation timestamp.
+        updated_at (datetime): Update timestamp.
+        address (Address): Associated address.
+        business_contacts (list[BusinessContact]): Link table to contacts.
+        contacts (list[Contact]): Associated contacts.
+    """
     __tablename__ = "businesses"
 
     id = Column(BigInteger, primary_key=True, index=True)
@@ -210,6 +404,18 @@ class Business(Base):
 
 # BusinessContacts
 class BusinessContact(Base):
+    """
+    Association table between Business and Contact.
+
+    Attributes:
+        id (int): Primary key.
+        business_id (int): Foreign key to the Business table.
+        contact_id (int): Foreign key to the Contact table.
+        created_at (datetime): Creation timestamp.
+        updated_at (datetime): Update timestamp.
+        business (Business): Associated business.
+        contact (Contact): Associated contact.
+    """
     __tablename__ = "business_contacts"
 
     id = Column(BigInteger, primary_key=True, index=True)
@@ -224,6 +430,26 @@ class BusinessContact(Base):
 
 # Citations
 class Citation(Base):
+    """
+    Represents a citation issued for a violation.
+
+    Attributes:
+        id (int): Primary key.
+        fine (int): Fine amount.
+        deadline (date): Payment or court deadline.
+        violation_id (int): Foreign key to the Violation table.
+        created_at (datetime): Creation timestamp.
+        updated_at (datetime): Update timestamp.
+        user_id (int): Foreign key to the User table (issuer).
+        status (int): Citation status.
+        trial_date (date): Date of the trial.
+        code_id (int): Foreign key to the Code table.
+        citationid (str): External citation identifier.
+        unit_id (int): Foreign key to the Unit table.
+        violation (Violation): Associated violation.
+        code (Code): Associated code.
+        user (User): Associated user.
+    """
     __tablename__ = "citations"
 
     id = Column(BigInteger, primary_key=True, index=True)
@@ -248,6 +474,16 @@ class Citation(Base):
 
 # CitationsCodes (join table for Many-to-Many relationships)
 class CitationCode(Base):
+    """
+    Association table between Citation and Code.
+
+    Note: The `Citation` model has a `code_id` FK suggesting a one-to-many relationship,
+    but this table supports many-to-many.
+
+    Attributes:
+        citation_id (int): Foreign key to the Citation table.
+        code_id (int): Foreign key to the Code table.
+    """
     __tablename__ = "citations_codes"
     
     citation_id = Column(BigInteger, ForeignKey('citations.id'), primary_key=True, nullable=False)
@@ -256,6 +492,17 @@ class CitationCode(Base):
 
 # CitationComments
 class CitationComment(Base):
+    """
+    Comments on a citation.
+
+    Attributes:
+        id (int): Primary key.
+        user_id (int): Foreign key to the User table.
+        citation_id (int): Foreign key to the Citation table.
+        content (str): Comment content.
+        created_at (datetime): Creation timestamp.
+        updated_at (datetime): Update timestamp.
+    """
     __tablename__ = "citation_comments"
 
     id = Column(BigInteger, primary_key=True, index=True)
@@ -268,6 +515,20 @@ class CitationComment(Base):
 
 # Codes
 class Code(Base):
+    """
+    Represents a municipal code or ordinance.
+
+    Attributes:
+        id (int): Primary key.
+        chapter (str): Chapter of the code.
+        section (str): Section of the code.
+        name (str): Short name or title.
+        description (str): Full description or text.
+        created_at (datetime): Creation timestamp.
+        updated_at (datetime): Update timestamp.
+        citations (list[Citation]): Related citations.
+        violations (list[Violation]): Related violations.
+    """
     __tablename__ = "codes"
 
     id = Column(BigInteger, primary_key=True, index=True)
@@ -288,6 +549,22 @@ class Code(Base):
 
 # Comments
 class Comment(Base):
+    """
+    General comments associated with an address.
+
+    Attributes:
+        id (int): Primary key.
+        content (str): Content of the comment.
+        address_id (int): Foreign key to the Address table.
+        user_id (int): Foreign key to the User table.
+        unit_id (int): Foreign key to the Unit table (optional).
+        review_later (bool): Flag to mark for later review.
+        created_at (datetime): Creation timestamp.
+        updated_at (datetime): Update timestamp.
+        address (Address): Associated address.
+        user (User): Associated user.
+        unit (Unit): Associated unit.
+    """
     __tablename__ = "comments"
     
     id = Column(BigInteger, primary_key=True, index=True)
@@ -306,6 +583,17 @@ class Comment(Base):
 
 # Concerns
 class Concern(Base):
+    """
+    Represents a concern or complaint lodged by a resident.
+
+    Attributes:
+        id (int): Primary key.
+        address_id (int): Foreign key to the Address table.
+        content (str): Description of the concern.
+        emailorphone (str): Contact info of the reporter.
+        created_at (datetime): Creation timestamp.
+        updated_at (datetime): Update timestamp.
+    """
     __tablename__ = "concerns"
     
     id = Column(BigInteger, primary_key=True, index=True)
@@ -318,6 +606,22 @@ class Concern(Base):
 
 # Contacts
 class Contact(Base):
+    """
+    Represents a contact person (e.g., owner, property manager).
+
+    Attributes:
+        id (int): Primary key.
+        name (str): Name of the contact.
+        email (str): Email address.
+        phone (str): Phone number.
+        notes (str): Additional notes.
+        hidden (bool): Whether the contact is hidden/archived.
+        created_at (datetime): Creation timestamp.
+        updated_at (datetime): Update timestamp.
+        inspections (list[Inspection]): Related inspections.
+        addresses (list[Address]): Related addresses.
+        businesses (list[Business]): Related businesses.
+    """
     __tablename__ = "contacts"
 
     id = Column(BigInteger, primary_key=True, index=True)
@@ -339,6 +643,17 @@ class Contact(Base):
 
 # ContactComments
 class ContactComment(Base):
+    """
+    Comments on a contact.
+
+    Attributes:
+        id (int): Primary key.
+        comment (str): Comment content.
+        user_id (int): Foreign key to the User table.
+        contact_id (int): Foreign key to the Contact table.
+        created_at (datetime): Creation timestamp.
+        updated_at (datetime): Update timestamp.
+    """
     __tablename__ = "contact_comments"
     
     id = Column(BigInteger, primary_key=True, index=True)
@@ -350,6 +665,20 @@ class ContactComment(Base):
 
 # Units
 class Unit(Base):
+    """
+    Represents a unit within an address.
+
+    Attributes:
+        id (int): Primary key.
+        number (str): Unit number/identifier.
+        address_id (int): Foreign key to the Address table.
+        vacancy_status (str): Vacancy status.
+        created_at (datetime): Creation timestamp.
+        updated_at (datetime): Update timestamp.
+        areas (list[Area]): Areas within the unit.
+        comments (list[Comment]): Comments on the unit.
+        violations (list[Violation]): Violations associated with the unit.
+    """
     __tablename__ = "units"
 
     id = Column(BigInteger, primary_key=True, index=True)
@@ -369,6 +698,18 @@ class Unit(Base):
 
 # InspectionCodes
 class InspectionCode(Base):
+    """
+    Association table between Inspection and Code.
+
+    Tracks which codes are relevant to an inspection.
+
+    Attributes:
+        id (int): Primary key.
+        inspection_id (int): Foreign key to the Inspection table.
+        code_id (int): Foreign key to the Code table.
+        created_at (datetime): Creation timestamp.
+        updated_at (datetime): Update timestamp.
+    """
     __tablename__ = "inspection_codes"
     
     id = Column(BigInteger, primary_key=True, index=True)
@@ -380,6 +721,19 @@ class InspectionCode(Base):
 
 # InspectionComments
 class InspectionComment(Base):
+    """
+    Comments on an inspection.
+
+    Attributes:
+        id (int): Primary key.
+        user_id (int): Foreign key to the User table.
+        inspection_id (int): Foreign key to the Inspection table.
+        content (str): Comment content.
+        created_at (datetime): Creation timestamp.
+        updated_at (datetime): Update timestamp.
+        user (User): Associated user.
+        inspection (Inspection): Associated inspection.
+    """
     __tablename__ = "inspection_comments"
     
     id = Column(BigInteger, primary_key=True, index=True)
@@ -395,6 +749,54 @@ class InspectionComment(Base):
 
 # Inspections
 class Inspection(Base):
+    """
+    Represents an inspection event.
+
+    Attributes:
+        id (int): Primary key.
+        source (str): Source of the inspection request.
+        status (str): Current status.
+        attachments (str): URLs or references to attachments.
+        result (str): Result of the inspection.
+        description (str): Description.
+        thoughts (str): Inspector's thoughts/notes.
+        originator (str): Originator of the inspection.
+        unit_id (int): Foreign key to the Unit table.
+        address_id (int): Foreign key to the Address table.
+        created_at (datetime): Creation timestamp.
+        updated_at (datetime): Update timestamp.
+        assignee (str): Assigned inspector name (legacy/text).
+        inspector_id (int): Foreign key to the User table (inspector).
+        name (str): Name related to inspection.
+        email (str): Email related to inspection.
+        phone (str): Phone related to inspection.
+        scheduled_datetime (datetime): Scheduled date and time.
+        photos (str): Photos.
+        notes_area_1 (str): Notes for area 1.
+        notes_area_2 (str): Notes for area 2.
+        notes_area_3 (str): Notes for area 3.
+        intphotos (str): Interior photos.
+        extphotos (str): Exterior photos.
+        contact_id (int): Foreign key to the Contact table.
+        new_contact_name (str): Name of a new contact found.
+        new_contact_email (str): Email of a new contact found.
+        new_contact_phone (str): Phone of a new contact found.
+        new_chapter (str): New code chapter referenced.
+        new_section (str): New code section referenced.
+        new_name (str): New code name referenced.
+        new_description (str): New code description referenced.
+        confirmed (bool): Confirmation status.
+        business_id (int): Foreign key to the Business table.
+        start_time (datetime): Actual start time.
+        paid (bool): Payment status.
+        address (Address): Associated address.
+        inspector (User): Associated inspector.
+        contact (Contact): Associated contact.
+        areas (list[Area]): Areas inspected.
+        licenses (list[License]): Licenses related to inspection.
+        permits (list[Permit]): Permits related to inspection.
+        inspection_comments (list[InspectionComment]): Comments on inspection.
+    """
     __tablename__ = "inspections"
     
     id = Column(BigInteger, primary_key=True, index=True)
@@ -446,6 +848,26 @@ class Inspection(Base):
 
 # Licenses
 class License(Base):
+    """
+    Represents a business license.
+
+    Attributes:
+        id (int): Primary key.
+        inspection_id (int): Foreign key to the Inspection table.
+        sent (bool): Whether the license has been sent.
+        revoked (bool): Whether the license is revoked.
+        fiscal_year (str): Fiscal year of the license.
+        expiration_date (date): Expiration date.
+        license_type (int): Type code.
+        business_id (int): Foreign key to the Business table.
+        license_number (str): License number.
+        date_issued (date): Date issued.
+        conditions (str): Conditions of the license.
+        paid (bool): Payment status.
+        created_at (datetime): Creation timestamp.
+        updated_at (datetime): Update timestamp.
+        inspection (Inspection): Associated inspection.
+    """
     __tablename__ = "licenses"
     
     id = Column(BigInteger, primary_key=True, index=True)
@@ -467,6 +889,23 @@ class License(Base):
 
 # Permits
 class Permit(Base):
+    """
+    Represents a permit.
+
+    Attributes:
+        id (int): Primary key.
+        inspection_id (int): Foreign key to the Inspection table.
+        permit_type (str): Type of permit.
+        business_id (int): Foreign key to the Business table.
+        permit_number (str): Permit number.
+        date_issued (date): Date issued.
+        expiration_date (date): Expiration date.
+        conditions (str): Conditions of the permit.
+        paid (bool): Payment status.
+        created_at (datetime): Creation timestamp.
+        updated_at (datetime): Update timestamp.
+        inspection (Inspection): Associated inspection.
+    """
     __tablename__ = "permits"
 
     id = Column(BigInteger, primary_key=True, index=True)
@@ -490,6 +929,20 @@ class Permit(Base):
 
 # Notifications
 class Notification(Base):
+    """
+    Represents a user notification.
+
+    Attributes:
+        id (int): Primary key.
+        title (str): Notification title.
+        body (str): Notification body/content.
+        inspection_id (int): Foreign key to the Inspection table (optional).
+        comment_id (int): Foreign key to the Comment table (optional).
+        user_id (int): Foreign key to the User table.
+        read (bool): Read status.
+        created_at (datetime): Creation timestamp.
+        updated_at (datetime): Update timestamp.
+    """
     __tablename__ = "notifications"
     
     id = Column(BigInteger, primary_key=True, index=True)
@@ -506,6 +959,18 @@ class Notification(Base):
 
 # Mentions (when a user is @-mentioned in a comment)
 class Mention(Base):
+    """
+    Represents a user mention in a comment.
+
+    Attributes:
+        id (int): Primary key.
+        comment_id (int): Foreign key to the Comment table.
+        user_id (int): Foreign key to the User table (recipient).
+        actor_id (int): Foreign key to the User table (sender).
+        is_read (bool): Read status.
+        created_at (datetime): Creation timestamp.
+        updated_at (datetime): Update timestamp.
+    """
     __tablename__ = "mentions"
 
     id = Column(BigInteger, primary_key=True, index=True)
@@ -519,6 +984,19 @@ class Mention(Base):
 
 # Links a general Comment to one or more Contacts when %Contact mentions are used
 class CommentContactLink(Base):
+    """
+    Link table between Comment and Contact (mentions).
+
+    Used when a contact is mentioned in a comment.
+
+    Attributes:
+        id (int): Primary key.
+        comment_id (int): Foreign key to the Comment table.
+        contact_id (int): Foreign key to the Contact table.
+        actor_id (int): Foreign key to the User table (who mentioned).
+        created_at (datetime): Creation timestamp.
+        updated_at (datetime): Update timestamp.
+    """
     __tablename__ = "comment_contact_links"
 
     id = Column(BigInteger, primary_key=True, index=True)
@@ -531,6 +1009,22 @@ class CommentContactLink(Base):
 
 # Observations
 class Observation(Base):
+    """
+    Represents an observation made during an inspection in a specific area.
+
+    Attributes:
+        id (int): Primary key.
+        content (str): Observation content/description.
+        area_id (int): Foreign key to the Area table.
+        potentialvio (bool): Whether it is a potential violation.
+        user_id (int): Foreign key to the User table (observer).
+        created_at (datetime): Creation timestamp.
+        updated_at (datetime): Update timestamp.
+        area (Area): Associated area.
+        user (User): Associated user.
+        photos (list[Photo]): Photos of the observation.
+        codes (list[Code]): Suspected codes.
+    """
     __tablename__ = "observations"
     
     id = Column(BigInteger, primary_key=True, index=True)
@@ -554,6 +1048,17 @@ class Observation(Base):
 
 # Photos
 class Photo(Base):
+    """
+    Represents a photo linked to an observation.
+
+    Attributes:
+        id (int): Primary key.
+        url (str): URL of the photo.
+        observation_id (int): Foreign key to the Observation table.
+        created_at (datetime): Creation timestamp.
+        updated_at (datetime): Update timestamp.
+        observation (Observation): Associated observation.
+    """
     __tablename__ = "photos"
     
     id = Column(BigInteger, primary_key=True, index=True)
@@ -567,6 +1072,15 @@ class Photo(Base):
 
 # ObservationCodes (join table for suspected codes per Observation)
 class ObservationCode(Base):
+    """
+    Association table between Observation and Code.
+
+    Tracks suspected codes for an observation.
+
+    Attributes:
+        observation_id (int): Foreign key to the Observation table.
+        code_id (int): Foreign key to the Code table.
+    """
     __tablename__ = "observation_codes"
 
     observation_id = Column(BigInteger, ForeignKey('observations.id'), primary_key=True, nullable=False)
@@ -574,6 +1088,17 @@ class ObservationCode(Base):
 
 # Prompts
 class Prompt(Base):
+    """
+    Represents a prompt for a room during inspection.
+
+    Attributes:
+        id (int): Primary key.
+        content (str): The prompt text.
+        room_id (int): Foreign key to the Room table.
+        created_at (datetime): Creation timestamp.
+        updated_at (datetime): Update timestamp.
+        room (Room): Associated room.
+    """
     __tablename__ = "prompts"
     
     id = Column(BigInteger, primary_key=True, index=True)
@@ -587,6 +1112,16 @@ class Prompt(Base):
 
 # Rooms
 class Room(Base):
+    """
+    Represents a type of room (e.g., "Kitchen", "Bathroom").
+
+    Attributes:
+        id (int): Primary key.
+        name (str): Room name.
+        created_at (datetime): Creation timestamp.
+        updated_at (datetime): Update timestamp.
+        prompts (list[Prompt]): Associated prompts.
+    """
     __tablename__ = "rooms"
     
     id = Column(BigInteger, primary_key=True, index=True)
@@ -599,6 +1134,16 @@ class Room(Base):
 
 # UnitContacts
 class UnitContact(Base):
+    """
+    Association table between Unit and Contact.
+
+    Attributes:
+        id (int): Primary key.
+        unit_id (int): Foreign key to the Unit table.
+        contact_id (int): Foreign key to the Contact table.
+        created_at (datetime): Creation timestamp.
+        updated_at (datetime): Update timestamp.
+    """
     __tablename__ = "unit_contacts"
     
     id = Column(BigInteger, primary_key=True, index=True)
@@ -610,6 +1155,26 @@ class UnitContact(Base):
 
 # Users
 class User(Base):
+    """
+    Represents a system user.
+
+    Attributes:
+        id (int): Primary key.
+        email (str): Email address (unique).
+        encrypted_password (str): Encrypted password.
+        reset_password_token (str): Token for password reset.
+        reset_password_sent_at (datetime): Timestamp when reset token was sent.
+        remember_created_at (datetime): Timestamp for remember-me functionality.
+        name (str): User name.
+        phone (str): User phone.
+        role (int): User role (e.g., 0 for standard, 3 for admin).
+        created_at (datetime): Creation timestamp.
+        updated_at (datetime): Update timestamp.
+        inspections (list[Inspection]): Inspections assigned to user.
+        comments (list[Comment]): Comments made by user.
+        observations (list[Observation]): Observations made by user.
+        inspection_comments (list[InspectionComment]): Inspection comments made by user.
+    """
     __tablename__ = "users"
 
     id = Column(BigInteger, primary_key=True, index=True)
@@ -633,6 +1198,18 @@ class User(Base):
 
 # Versions
 class Version(Base):
+    """
+    Represents a version history record (PaperTrail style).
+
+    Attributes:
+        id (int): Primary key.
+        item_type (str): Type of the item (table name).
+        item_id (int): ID of the item.
+        event (str): Event type (create, update, destroy).
+        whodunnit (str): Who performed the action.
+        object (str): Serialized object state.
+        created_at (datetime): Creation timestamp.
+    """
     __tablename__ = "versions"
     
     id = Column(BigInteger, primary_key=True, index=True)
@@ -645,6 +1222,16 @@ class Version(Base):
 
 # ViolationCodes
 class ViolationCode(Base):
+    """
+    Association table between Violation and Code.
+
+    Attributes:
+        id (int): Primary key.
+        violation_id (int): Foreign key to the Violation table.
+        code_id (int): Foreign key to the Code table.
+        created_at (datetime): Creation timestamp.
+        updated_at (datetime): Update timestamp.
+    """
     __tablename__ = "violation_codes"
     
     id = Column(BigInteger, primary_key=True, index=True)
@@ -656,6 +1243,18 @@ class ViolationCode(Base):
 
 # ViolationComments
 class ViolationComment(Base):
+    """
+    Comments on a violation.
+
+    Attributes:
+        id (int): Primary key.
+        violation_id (int): Foreign key to the Violation table.
+        user_id (int): Foreign key to the User table.
+        content (str): Comment content.
+        created_at (datetime): Creation timestamp.
+        updated_at (datetime): Update timestamp.
+        user (User): Associated user.
+    """
     __tablename__ = "violation_comments"
     
     id = Column(BigInteger, primary_key=True, index=True)
@@ -671,6 +1270,31 @@ class ViolationComment(Base):
 
 # Violations
 class Violation(Base):
+    """
+    Represents a code violation.
+
+    Attributes:
+        id (int): Primary key.
+        description (str): Description of the violation.
+        status (int): Status code.
+        address_id (int): Foreign key to the Address table.
+        user_id (int): Foreign key to the User table (issuer).
+        deadline (str): Deadline string (e.g. "30 days").
+        violation_type (str): Type of violation.
+        extend (int): Extension days granted.
+        unit_id (int): Foreign key to the Unit table.
+        inspection_id (int): Foreign key to the Inspection table.
+        comment (str): Additional comment.
+        business_id (int): Foreign key to the Business table.
+        created_at (datetime): Creation timestamp.
+        updated_at (datetime): Update timestamp.
+        citations (list[Citation]): Citations issued for this violation.
+        address (Address): Associated address.
+        codes (list[Code]): Codes violated.
+        violation_comments (list[ViolationComment]): Comments on the violation.
+        user (User): Associated user.
+        unit (Unit): Associated unit.
+    """
     __tablename__ = "violations"
     
     id = Column(BigInteger, primary_key=True, index=True)
@@ -704,7 +1328,12 @@ class Violation(Base):
     unit = relationship("Unit", back_populates="violations")
 
     def deadline_passed(self) -> bool:
-        """Determine if the deadline has passed."""
+        """
+        Determine if the deadline has passed.
+
+        Returns:
+            bool: True if the deadline has passed, False otherwise.
+        """
         deadline_index = DEADLINE_OPTIONS.index(self.deadline) if self.deadline in DEADLINE_OPTIONS else None
         if deadline_index is None:
             return False
@@ -714,7 +1343,15 @@ class Violation(Base):
 
     @property
     def deadline_date(self) -> datetime:
-        """Calculate the actual deadline date."""
+        """
+        Calculate the actual deadline date.
+
+        Returns:
+            datetime: The calculated deadline date including extensions.
+
+        Raises:
+            ValueError: If the deadline value is invalid.
+        """
         deadline_index = DEADLINE_OPTIONS.index(self.deadline) if self.deadline in DEADLINE_OPTIONS else None
         if deadline_index is None:
             raise ValueError("Invalid deadline value")

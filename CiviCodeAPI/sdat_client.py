@@ -11,6 +11,21 @@ SDAT_BASE_URL = "https://sdat.dat.maryland.gov/RealProperty/Pages/viewdetails.as
 
 @dataclass
 class SDATOwnerInfo:
+    """
+    Data structure for SDAT owner information.
+
+    Attributes:
+        owner_name (str): Owner's name.
+        owner_address (str): Owner's full address.
+        owner_city (str): Owner's city.
+        owner_state (str): Owner's state.
+        owner_zip (str): Owner's ZIP code.
+        mailing_lines (list[str]): Raw mailing address lines.
+        premises_lines (list[str]): Raw premises address lines.
+        rendered_district (str): District identifier found on page.
+        rendered_account (str): Account identifier found on page.
+        source_url (str): The URL of the SDAT page.
+    """
     owner_name: Optional[str]
     owner_address: Optional[str]
     owner_city: Optional[str]
@@ -29,6 +44,13 @@ _SPAN_PATTERN_CACHE: dict[str, re.Pattern[str]] = {}
 def _extract_span_segment(source: str, id_fragment: str) -> Optional[str]:
     """
     Grab the inner HTML of a span whose id contains the provided fragment.
+
+    Args:
+        source (str): HTML source code.
+        id_fragment (str): Substring to match in the span's ID.
+
+    Returns:
+        str: The inner HTML of the matched span, or None if not found.
     """
     if id_fragment not in _SPAN_PATTERN_CACHE:
         # Capture any span where id contains the fragment (e.g., lblOwnerName_0)
@@ -71,6 +93,20 @@ def fetch_owner_info(
     account_number: str,
     district: Optional[str] = None,
 ) -> SDATOwnerInfo:
+    """
+    Fetch property owner information from Maryland SDAT.
+
+    Args:
+        county (str): County identifier.
+        account_number (str): Account number.
+        district (str, optional): District identifier.
+
+    Returns:
+        SDATOwnerInfo: Parsed owner information.
+
+    Raises:
+        RuntimeError: If SDAT cannot be reached or returns an error.
+    """
     params: dict[str, str] = {
         "County": str(county),
         "SearchType": "ACCT",

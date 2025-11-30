@@ -10,6 +10,12 @@ FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL")  # e.g., https://app.example.
 logger = logging.getLogger(__name__)
 
 def _should_send() -> bool:
+    """
+    Check if email sending is enabled.
+
+    Returns:
+        bool: True if email is enabled and API key is present, False otherwise.
+    """
     # Respect feature flag and ensure API key is present
     enabled = EMAIL_ENABLED
     has_key = bool(SENDGRID_API_KEY)
@@ -20,6 +26,17 @@ def _should_send() -> bool:
     return enabled and has_key
 
 def build_notification_html(subject: Optional[str], body: Optional[str], inspection_id: Optional[int] = None) -> str:
+    """
+    Build the HTML content for a notification email.
+
+    Args:
+        subject (str): The email subject.
+        body (str): The email body content.
+        inspection_id (int, optional): The ID of the inspection to link to.
+
+    Returns:
+        str: The constructed HTML string.
+    """
     safe_subject = subject or "Notification"
     safe_body = body or ""
     link_html = ""
@@ -38,7 +55,15 @@ def build_notification_html(subject: Optional[str], body: Optional[str], inspect
 def send_notification_email(subject: str, body: str, to_email: str, inspection_id: Optional[int] = None) -> bool:
     """
     Send a notification email via SendGrid.
-    Returns True on success, False if skipped or failed.
+
+    Args:
+        subject (str): The email subject.
+        body (str): The email body.
+        to_email (str): The recipient's email address.
+        inspection_id (int, optional): The ID of the inspection to link to.
+
+    Returns:
+        bool: True on success, False if skipped or failed.
     """
     try:
         if not _should_send():
@@ -65,6 +90,15 @@ def send_notification_email(subject: str, body: str, to_email: str, inspection_i
 
 
 def build_password_reset_html(reset_url: Optional[str]) -> str:
+    """
+    Build the HTML content for a password reset email.
+
+    Args:
+        reset_url (str): The URL for resetting the password.
+
+    Returns:
+        str: The constructed HTML string.
+    """
     link_html = ""
     if reset_url:
         link_html = f"""
@@ -89,7 +123,14 @@ def build_password_reset_html(reset_url: Optional[str]) -> str:
 
 def send_password_reset_email(to_email: str, reset_url: Optional[str]) -> bool:
     """
-    Send a password reset email. Returns True if an attempt was made, False otherwise.
+    Send a password reset email.
+
+    Args:
+        to_email (str): The recipient's email address.
+        reset_url (str): The URL for resetting the password.
+
+    Returns:
+        bool: True if an attempt was made, False otherwise.
     """
     try:
         if not _should_send():
