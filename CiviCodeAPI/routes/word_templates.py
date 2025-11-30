@@ -10,12 +10,24 @@ from typing import Optional
 
 router = APIRouter()
 
-def _get_template_doc(db: Session, template_id: Optional[int], default_filename: str) -> DocxTemplate:
-    """Helper to retrieve DocxTemplate either from DB or local file."""
+def _get_template_doc(db: Session, template_id: Optional[int], default_filename: str, expected_category: str) -> DocxTemplate:
+    """Helper to retrieve DocxTemplate either from DB or local file.
+    
+    Args:
+        db: Database session
+        template_id: Optional custom template ID from the database
+        default_filename: Default template filename to use if no template_id provided
+        expected_category: Expected category ('violation', 'compliance', 'license') to validate against
+    """
     if template_id:
         template = db.query(DocumentTemplate).filter(DocumentTemplate.id == template_id).first()
         if not template:
             raise HTTPException(status_code=404, detail=f"Template with id {template_id} not found")
+        if template.category != expected_category:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Template category mismatch: expected '{expected_category}' but got '{template.category}'"
+            )
         return DocxTemplate(BytesIO(template.content))
     else:
         template_path = os.path.join(os.path.dirname(__file__), "../templates", default_filename)
@@ -64,7 +76,7 @@ def generate_violation_notice(
         ] if violation.codes else [],
     }
 
-    doc = _get_template_doc(db, template_id, "violation_notice_template.docx")
+    doc = _get_template_doc(db, template_id, "violation_notice_template.docx", "violation")
     doc.render(context)
 
     file_stream = BytesIO()
@@ -132,7 +144,7 @@ def generate_compliance_letter(
         "violation_codes": codes_context,
     }
 
-    doc = _get_template_doc(db, template_id, "compliance_notice_template.docx")
+    doc = _get_template_doc(db, template_id, "compliance_notice_template.docx", "compliance")
     doc.render(context)
 
     file_stream = BytesIO()
@@ -203,7 +215,7 @@ def generate_license_document(
         "business_address": getattr(business, 'address', '') if business else "",
     }
 
-    doc = _get_template_doc(db, template_id, tpl_filename)
+    doc = _get_template_doc(db, template_id, tpl_filename, "license")
     doc.render(context)
 
     file_stream = BytesIO()
