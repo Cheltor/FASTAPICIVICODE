@@ -11,8 +11,17 @@ router = APIRouter()
 
 
 def _parse_dates(start_date: Optional[str], end_date: Optional[str]) -> tuple[datetime, datetime]:
-    """Parse YYYY-MM-DD strings to an inclusive [start_of_day, end_of_day] range.
+    """
+    Parse YYYY-MM-DD strings to an inclusive [start_of_day, end_of_day] range.
+
     Defaults to last 14 days when not provided.
+
+    Args:
+        start_date (str, optional): Start date string.
+        end_date (str, optional): End date string.
+
+    Returns:
+        tuple[datetime, datetime]: Start and end datetimes.
     """
     if start_date and end_date:
         try:
@@ -29,11 +38,23 @@ def _parse_dates(start_date: Optional[str], end_date: Optional[str]) -> tuple[da
 
 
 def _count_inspection_window(db: Session, start_dt: datetime, end_dt: datetime, *, term: str, contains: bool = False) -> Dict[str, int]:
-    """Return counts for inspection request, any updates, and approvals for a type.
+    """
+    Return counts for inspection request, any updates, and approvals for a type.
+
     - Request: created_at in range
     - Updated: updated_at in range
     - Approved: status in (completed, satisfactory) and updated_at in range
     Filtering by source either exact match (case-insensitive) or contains term.
+
+    Args:
+        db (Session): The database session.
+        start_dt (datetime): Start of window.
+        end_dt (datetime): End of window.
+        term (str): Search term for source.
+        contains (bool): Whether to use partial match.
+
+    Returns:
+        dict: Counts for requests, updated, and approved.
     """
     src = func.lower(Inspection.source)
     t = term.lower()
@@ -76,6 +97,17 @@ def get_sir_stats(
     end_date: Optional[str] = Query(None, description="YYYY-MM-DD"),
     db: Session = Depends(get_db),
 ):
+    """
+    Get SIR (Systematic Inspection Review) statistics for a date range.
+
+    Args:
+        start_date (str, optional): Start date YYYY-MM-DD.
+        end_date (str, optional): End date YYYY-MM-DD.
+        db (Session): The database session.
+
+    Returns:
+        dict: Statistics counts.
+    """
     start_dt, end_dt = _parse_dates(start_date, end_date)
 
     # Complaints

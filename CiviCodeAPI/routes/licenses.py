@@ -12,6 +12,16 @@ router = APIRouter()
 # Show all the licenses
 @router.get("/licenses/", response_model=List[LicenseResponse])
 def get_licenses(inspection_id: Optional[int] = None, db: Session = Depends(get_db)):
+    """
+    Get all licenses, optionally filtered by inspection ID.
+
+    Args:
+        inspection_id (int, optional): Filter by inspection ID.
+        db (Session): The database session.
+
+    Returns:
+        list[LicenseResponse]: A list of licenses.
+    """
     q = db.query(License)
     if inspection_id is not None:
         q = q.filter(License.inspection_id == inspection_id)
@@ -39,6 +49,19 @@ def get_licenses(inspection_id: Optional[int] = None, db: Session = Depends(get_
 
 @router.get("/licenses/{license_id}", response_model=LicenseResponse)
 def get_license(license_id: int, db: Session = Depends(get_db)):
+    """
+    Get a license by ID.
+
+    Args:
+        license_id (int): The ID of the license.
+        db (Session): The database session.
+
+    Returns:
+        LicenseResponse: The license details.
+
+    Raises:
+        HTTPException: If license is not found.
+    """
     lic = db.query(License).filter(License.id == license_id).first()
     if not lic:
         raise HTTPException(status_code=404, detail="License not found")
@@ -60,6 +83,16 @@ def get_license(license_id: int, db: Session = Depends(get_db)):
 # Important: if there are no licenses for the address, return an empty list (200), not a 404.
 @router.get("/licenses/address/{address_id}", response_model=List[LicenseResponse])
 def get_licenses_by_address(address_id: int, db: Session = Depends(get_db)):
+    """
+    Get licenses for an address (via linked inspections).
+
+    Args:
+        address_id (int): The ID of the address.
+        db (Session): The database session.
+
+    Returns:
+        list[LicenseResponse]: A list of licenses.
+    """
     # Find all inspection ids for this address
     insp_rows = db.query(Inspection.id).filter(Inspection.address_id == address_id).all()
     insp_ids = [r.id for r in insp_rows]
@@ -98,6 +131,19 @@ def get_licenses_by_address(address_id: int, db: Session = Depends(get_db)):
 
 @router.post("/licenses/", response_model=LicenseResponse)
 def create_license(license_in: LicenseCreate, db: Session = Depends(get_db)):
+    """
+    Create a new license.
+
+    Args:
+        license_in (LicenseCreate): License data.
+        db (Session): The database session.
+
+    Returns:
+        LicenseResponse: The created license.
+
+    Raises:
+        HTTPException: If license number exists or data is invalid.
+    """
     # avoid duplicate for same inspection
     existing = db.query(License).filter(License.inspection_id == license_in.inspection_id).first()
     if existing:
@@ -201,6 +247,20 @@ def create_license(license_in: LicenseCreate, db: Session = Depends(get_db)):
 
 @router.put("/licenses/{license_id}", response_model=LicenseResponse)
 def update_license(license_id: int, license_in: LicenseUpdate, db: Session = Depends(get_db)):
+    """
+    Update a license.
+
+    Args:
+        license_id (int): The ID of the license.
+        license_in (LicenseUpdate): Updated data.
+        db (Session): The database session.
+
+    Returns:
+        LicenseResponse: The updated license.
+
+    Raises:
+        HTTPException: If license not found or number conflict.
+    """
     lic = db.query(License).filter(License.id == license_id).first()
     if not lic:
         raise HTTPException(status_code=404, detail="License not found")
@@ -244,6 +304,16 @@ def update_license(license_id: int, license_in: LicenseUpdate, db: Session = Dep
 # Delete a license by ID
 @router.delete("/licenses/{license_id}", status_code=204)
 def delete_license(license_id: int, db: Session = Depends(get_db)):
+    """
+    Delete a license.
+
+    Args:
+        license_id (int): The ID of the license.
+        db (Session): The database session.
+
+    Raises:
+        HTTPException: If license not found or deletion fails.
+    """
     lic = db.query(License).filter(License.id == license_id).first()
     if not lic:
         raise HTTPException(status_code=404, detail="License not found")

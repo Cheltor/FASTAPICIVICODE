@@ -138,6 +138,16 @@ def _notify_admins_unassigned_complaint(db: Session, inspection: Inspection):
 # Get all inspections
 @router.get("/inspections/", response_model=List[InspectionResponse])
 def get_inspections(skip: int = 0, db: Session = Depends(get_db)):
+    """
+    Get all inspections (excluding complaints).
+
+    Args:
+        skip (int): Pagination offset.
+        db (Session): The database session.
+
+    Returns:
+        list[InspectionResponse]: A list of inspections.
+    """
     inspections = (
         db.query(Inspection)
         .options(joinedload(Inspection.address))
@@ -151,6 +161,16 @@ def get_inspections(skip: int = 0, db: Session = Depends(get_db)):
 # Get all complaints
 @router.get("/complaints/", response_model=List[InspectionResponse])
 def get_complaints(skip: int = 0, db: Session = Depends(get_db)):
+    """
+    Get all complaints (inspections with source='Complaint').
+
+    Args:
+        skip (int): Pagination offset.
+        db (Session): The database session.
+
+    Returns:
+        list[InspectionResponse]: A list of complaints.
+    """
     complaints = (
         db.query(Inspection)
         .options(joinedload(Inspection.address))
@@ -164,6 +184,16 @@ def get_complaints(skip: int = 0, db: Session = Depends(get_db)):
 # Delete an inspection by ID
 @router.delete("/inspections/{inspection_id}", status_code=204)
 def delete_inspection(inspection_id: int, db: Session = Depends(get_db)):
+    """
+    Delete an inspection.
+
+    Args:
+        inspection_id (int): The ID of the inspection.
+        db (Session): The database session.
+
+    Raises:
+        HTTPException: If inspection not found or deletion fails.
+    """
     insp = db.query(Inspection).filter(Inspection.id == inspection_id).first()
     if not insp:
         raise HTTPException(status_code=404, detail="Inspection not found")
@@ -214,6 +244,16 @@ def delete_inspection(inspection_id: int, db: Session = Depends(get_db)):
 # Delete a complaint by ID (complaint is an Inspection with source 'Complaint')
 @router.delete("/complaints/{inspection_id}", status_code=204)
 def delete_complaint(inspection_id: int, db: Session = Depends(get_db)):
+    """
+    Delete a complaint.
+
+    Args:
+        inspection_id (int): The ID of the complaint.
+        db (Session): The database session.
+
+    Raises:
+        HTTPException: If complaint not found or deletion fails.
+    """
     insp = db.query(Inspection).filter(Inspection.id == inspection_id, Inspection.source == 'Complaint').first()
     if not insp:
         raise HTTPException(status_code=404, detail="Complaint not found")
@@ -264,6 +304,25 @@ async def create_inspection(
     db: Session = Depends(get_db),
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
+    """
+    Create a new inspection or complaint.
+
+    Args:
+        address_id (int, optional): Address ID.
+        unit_id (int, optional): Unit ID.
+        source (str): Source of inspection.
+        description (str): Description.
+        contact_id (int, optional): Contact ID.
+        attachments (list[UploadFile]): Files to upload.
+        paid (bool): Paid status.
+        inspector_id (int, optional): Assigned inspector ID.
+        business_id (int, optional): Business ID.
+        db (Session): The database session.
+        current_user (User, optional): The user creating the inspection.
+
+    Returns:
+        InspectionResponse: The created inspection.
+    """
     new_inspection = Inspection(
         address_id=address_id,
         unit_id=unit_id,
@@ -324,6 +383,19 @@ async def create_inspection(
 # Get a specific inspection by ID
 @router.get("/inspections/{inspection_id}", response_model=InspectionResponse)
 def get_inspection(inspection_id: int, db: Session = Depends(get_db)):
+    """
+    Get an inspection by ID.
+
+    Args:
+        inspection_id (int): The ID of the inspection.
+        db (Session): The database session.
+
+    Returns:
+        InspectionResponse: The inspection details.
+
+    Raises:
+        HTTPException: If inspection is not found.
+    """
     inspection = (
       db.query(Inspection)
       .options(
@@ -356,6 +428,20 @@ def get_inspection(inspection_id: int, db: Session = Depends(get_db)):
 # Update status for an inspection (e.g., complaint)
 @router.patch("/inspections/{inspection_id}/status", response_model=InspectionResponse)
 def update_inspection_status(inspection_id: int, status: str = Form(...), db: Session = Depends(get_db)):
+    """
+    Update inspection status.
+
+    Args:
+        inspection_id (int): The ID of the inspection.
+        status (str): The new status.
+        db (Session): The database session.
+
+    Returns:
+        InspectionResponse: The updated inspection.
+
+    Raises:
+        HTTPException: If inspection is not found.
+    """
     inspection = db.query(Inspection).filter(Inspection.id == inspection_id).first()
     if not inspection:
         raise HTTPException(status_code=404, detail="Inspection not found")
@@ -476,6 +562,20 @@ def update_inspection_status(inspection_id: int, status: str = Form(...), db: Se
 # Update contact for an inspection (assign an existing contact)
 @router.patch("/inspections/{inspection_id}/contact", response_model=InspectionResponse)
 def update_inspection_contact(inspection_id: int, contact_id: int = Form(...), db: Session = Depends(get_db)):
+    """
+    Update the contact for an inspection.
+
+    Args:
+        inspection_id (int): The ID of the inspection.
+        contact_id (int): The ID of the contact.
+        db (Session): The database session.
+
+    Returns:
+        InspectionResponse: The updated inspection.
+
+    Raises:
+        HTTPException: If inspection or contact is not found.
+    """
     inspection = db.query(Inspection).filter(Inspection.id == inspection_id).first()
     if not inspection:
         raise HTTPException(status_code=404, detail="Inspection not found")
@@ -506,6 +606,20 @@ def update_inspection_assignee(
     inspector_id: Optional[int] = Form(None),
     db: Session = Depends(get_db),
 ):
+    """
+    Update the assigned inspector.
+
+    Args:
+        inspection_id (int): The ID of the inspection.
+        inspector_id (int, optional): The ID of the inspector.
+        db (Session): The database session.
+
+    Returns:
+        InspectionResponse: The updated inspection.
+
+    Raises:
+        HTTPException: If inspection or inspector is not found.
+    """
     inspection = db.query(Inspection).filter(Inspection.id == inspection_id).first()
     if not inspection:
         raise HTTPException(status_code=404, detail="Inspection not found")
@@ -543,6 +657,20 @@ def update_inspection_schedule(
     scheduled_datetime: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
+    """
+    Update inspection schedule.
+
+    Args:
+        inspection_id (int): The ID of the inspection.
+        scheduled_datetime (str, optional): ISO-like datetime string.
+        db (Session): The database session.
+
+    Returns:
+        InspectionResponse: The updated inspection.
+
+    Raises:
+        HTTPException: If inspection is not found or format is invalid.
+    """
     inspection = db.query(Inspection).filter(Inspection.id == inspection_id).first()
     if not inspection:
         raise HTTPException(status_code=404, detail="Inspection not found")
@@ -575,6 +703,16 @@ def update_inspection_schedule(
 # Get all inspections for a specific Address
 @router.get("/inspections/address/{address_id}", response_model=List[InspectionResponse])
 def get_inspections_by_address(address_id: int, db: Session = Depends(get_db)):
+    """
+    Get all inspections for an address.
+
+    Args:
+        address_id (int): The ID of the address.
+        db (Session): The database session.
+
+    Returns:
+        list[InspectionResponse]: A list of inspections.
+    """
     inspections = (
       db.query(Inspection)
       .options(
@@ -591,6 +729,16 @@ def get_inspections_by_address(address_id: int, db: Session = Depends(get_db)):
 # Get all complaints for a specific Address
 @router.get("/complaints/address/{address_id}", response_model=List[InspectionResponse])
 def get_complaints_by_address(address_id: int, db: Session = Depends(get_db)):
+    """
+    Get all complaints for an address.
+
+    Args:
+        address_id (int): The ID of the address.
+        db (Session): The database session.
+
+    Returns:
+        list[InspectionResponse]: A list of complaints.
+    """
     complaints = (
       db.query(Inspection)
       .options(
@@ -608,6 +756,16 @@ def get_complaints_by_address(address_id: int, db: Session = Depends(get_db)):
 # Get all areas beloning to a specific inspection
 @router.get("/inspections/{inspection_id}/areas", response_model=List[AreaResponse])
 def get_areas_by_inspection(inspection_id: int, db: Session = Depends(get_db)):
+    """
+    Get all areas for an inspection.
+
+    Args:
+        inspection_id (int): The ID of the inspection.
+        db (Session): The database session.
+
+    Returns:
+        list[AreaResponse]: A list of areas.
+    """
     areas = db.query(Area).filter(Area.inspection_id == inspection_id
     ).order_by(Area.created_at.desc()).all()
     return areas
@@ -615,6 +773,20 @@ def get_areas_by_inspection(inspection_id: int, db: Session = Depends(get_db)):
 # Create a new area
 @router.post("/inspections/{inspection_id}/areas", response_model=AreaResponse)
 def create_area_for_inspection(inspection_id: int, area: AreaCreate, db: Session = Depends(get_db)):
+    """
+    Create a new area for an inspection.
+
+    Args:
+        inspection_id (int): The ID of the inspection.
+        area (AreaCreate): Area data.
+        db (Session): The database session.
+
+    Returns:
+        AreaResponse: The created area.
+
+    Raises:
+        HTTPException: If inspection is not found.
+    """
     inspection = db.query(Inspection).filter(Inspection.id == inspection_id).first()
 
     if not inspection:
@@ -631,6 +803,17 @@ def create_area_for_inspection(inspection_id: int, area: AreaCreate, db: Session
 # Get all areas belonging to a specific unit
 @router.get("/inspections/{inspection_id}/unit/{unit_id}/areas", response_model=List[AreaResponse])
 def get_areas_by_unit(inspection_id: int, unit_id: int, db: Session = Depends(get_db)):
+    """
+    Get all areas for a specific unit within an inspection.
+
+    Args:
+        inspection_id (int): The ID of the inspection.
+        unit_id (int): The ID of the unit.
+        db (Session): The database session.
+
+    Returns:
+        list[AreaResponse]: A list of areas.
+    """
     areas = db.query(Area).filter(Area.inspection_id == inspection_id, Area.unit_id == unit_id
     ).order_by(Area.created_at.desc()).all()
     return areas
@@ -638,6 +821,21 @@ def get_areas_by_unit(inspection_id: int, unit_id: int, db: Session = Depends(ge
 # Create an area for a specific unit
 @router.post("/inspections/{inspection_id}/unit/{unit_id}/areas", response_model=AreaResponse)
 def create_area_for_unit(inspection_id: int, unit_id: int, area: AreaCreate, db: Session = Depends(get_db)):
+    """
+    Create an area for a specific unit within an inspection.
+
+    Args:
+        inspection_id (int): The ID of the inspection.
+        unit_id (int): The ID of the unit.
+        area (AreaCreate): Area data.
+        db (Session): The database session.
+
+    Returns:
+        AreaResponse: The created area.
+
+    Raises:
+        HTTPException: If inspection is not found.
+    """
     inspection = db.query(Inspection).filter(Inspection.id == inspection_id).first()
 
     if not inspection:
@@ -657,18 +855,49 @@ def create_area_for_unit(inspection_id: int, unit_id: int, area: AreaCreate, db:
 # Get all areas for a specific inspection and unit
 @router.get("/inspections/{inspection_id}/unit/{unit_id}/areas/count", response_model=int)
 def get_area_count_by_unit_and_inspection(inspection_id: int, unit_id: int, db: Session = Depends(get_db)):
+    """
+    Count areas for a specific unit within an inspection.
+
+    Args:
+        inspection_id (int): The ID of the inspection.
+        unit_id (int): The ID of the unit.
+        db (Session): The database session.
+
+    Returns:
+        int: The count of areas.
+    """
     area_count = db.query(Area).filter(Area.inspection_id == inspection_id, Area.unit_id == unit_id).count()
     return area_count
 
 # Get all rooms
 @router.get("/rooms/", response_model=List[RoomResponse])
 def get_rooms(skip: int = 0, db: Session = Depends(get_db)):
+    """
+    Get all room types.
+
+    Args:
+        skip (int): Pagination offset.
+        db (Session): The database session.
+
+    Returns:
+        list[RoomResponse]: A list of rooms.
+    """
     rooms = db.query(Room).offset(skip).all()
     return rooms
 
 # Create a new room
 @router.post("/rooms/", response_model=RoomResponse)
 def create_room(room: RoomCreate, db: Session = Depends(get_db)):
+    """
+    Create a new room type.
+
+    Args:
+        room (RoomCreate): Room data.
+        db (Session): The database session.
+
+    Returns:
+        RoomResponse: The created room.
+    """
     new_room = Room(**room.dict())
     db.add(new_room)
     db.commit()
@@ -678,6 +907,19 @@ def create_room(room: RoomCreate, db: Session = Depends(get_db)):
 # Show a room
 @router.get("/rooms/{room_id}", response_model=RoomResponse)
 def get_room(room_id: int, db: Session = Depends(get_db)):
+    """
+    Get a room type by ID.
+
+    Args:
+        room_id (int): The ID of the room.
+        db (Session): The database session.
+
+    Returns:
+        RoomResponse: The room details.
+
+    Raises:
+        HTTPException: If room is not found.
+    """
     room = db.query(Room).filter(Room.id == room_id).first()
     if not room:
         raise HTTPException(status_code=404, detail="Room not found")
@@ -686,6 +928,20 @@ def get_room(room_id: int, db: Session = Depends(get_db)):
 # Edit a room
 @router.put("/rooms/{room_id}", response_model=RoomResponse)
 def update_room(room_id: int, room: RoomCreate, db: Session = Depends(get_db)):
+    """
+    Update a room type.
+
+    Args:
+        room_id (int): The ID of the room.
+        room (RoomCreate): Updated room data.
+        db (Session): The database session.
+
+    Returns:
+        RoomResponse: The updated room.
+
+    Raises:
+        HTTPException: If room is not found.
+    """
     room_to_update = db.query(Room).filter(Room.id == room_id).first()
     if not room_to_update:
         raise HTTPException(status_code=404, detail="Room not found")
@@ -699,6 +955,16 @@ def update_room(room_id: int, room: RoomCreate, db: Session = Depends(get_db)):
 # Delete a room
 @router.delete("/rooms/{room_id}")
 def delete_room(room_id: int, db: Session = Depends(get_db)):
+    """
+    Delete a room type.
+
+    Args:
+        room_id (int): The ID of the room.
+        db (Session): The database session.
+
+    Raises:
+        HTTPException: If room is not found.
+    """
     room = db.query(Room).filter(Room.id == room_id).first()
     if not room:
         raise HTTPException(status_code=404, detail="Room not found")
@@ -709,6 +975,16 @@ def delete_room(room_id: int, db: Session = Depends(get_db)):
 # Get all prompts for a specific Room
 @router.get("/rooms/{room_id}/prompts", response_model=List[PromptResponse])
 def get_prompts_by_room(room_id: int, db: Session = Depends(get_db)):
+    """
+    Get prompts for a specific room type.
+
+    Args:
+        room_id (int): The ID of the room.
+        db (Session): The database session.
+
+    Returns:
+        list[PromptResponse]: A list of prompts.
+    """
     prompts = db.query(Prompt).filter(Prompt.room_id == room_id).all()
     return prompts
 
@@ -716,6 +992,20 @@ def get_prompts_by_room(room_id: int, db: Session = Depends(get_db)):
 # Create a new prompt
 @router.post("/rooms/{room_id}/prompts", response_model=PromptResponse)
 def create_prompt_for_room(room_id: int, prompt: PromptCreate, db: Session = Depends(get_db)):
+    """
+    Create a new prompt for a room type.
+
+    Args:
+        room_id (int): The ID of the room.
+        prompt (PromptCreate): Prompt data.
+        db (Session): The database session.
+
+    Returns:
+        PromptResponse: The created prompt.
+
+    Raises:
+        HTTPException: If room is not found.
+    """
     room = db.query(Room).filter(Room.id == room_id).first()
 
     if not room:
@@ -732,6 +1022,20 @@ def create_prompt_for_room(room_id: int, prompt: PromptCreate, db: Session = Dep
 # Edit a prompt
 @router.put("/prompts/{prompt_id}", response_model=PromptResponse)
 def update_prompt(prompt_id: int, prompt: PromptCreate, db: Session = Depends(get_db)):
+    """
+    Update a prompt.
+
+    Args:
+        prompt_id (int): The ID of the prompt.
+        prompt (PromptCreate): Updated prompt data.
+        db (Session): The database session.
+
+    Returns:
+        PromptResponse: The updated prompt.
+
+    Raises:
+        HTTPException: If prompt is not found.
+    """
     prompt_to_update = db.query(Prompt).filter(Prompt.id == prompt_id).first()
     if not prompt_to_update:
         raise HTTPException(status_code=404, detail="Prompt not found")
@@ -745,6 +1049,16 @@ def update_prompt(prompt_id: int, prompt: PromptCreate, db: Session = Depends(ge
 # Delete a prompt
 @router.delete("/prompts/{prompt_id}")
 def delete_prompt(prompt_id: int, db: Session = Depends(get_db)):
+    """
+    Delete a prompt.
+
+    Args:
+        prompt_id (int): The ID of the prompt.
+        db (Session): The database session.
+
+    Raises:
+        HTTPException: If prompt is not found.
+    """
     prompt = db.query(Prompt).filter(Prompt.id == prompt_id).first()
     if not prompt:
         raise HTTPException(status_code=404, detail="Prompt not found")
@@ -755,6 +1069,19 @@ def delete_prompt(prompt_id: int, db: Session = Depends(get_db)):
 # Get specific Area
 @router.get("/areas/{area_id}", response_model=AreaResponse)
 def get_area(area_id: int, db: Session = Depends(get_db)):
+    """
+    Get an area by ID.
+
+    Args:
+        area_id (int): The ID of the area.
+        db (Session): The database session.
+
+    Returns:
+        AreaResponse: The area details.
+
+    Raises:
+        HTTPException: If area is not found.
+    """
     area = db.query(Area).filter(Area.id == area_id).first()
     if not area:
         raise HTTPException(status_code=404, detail="Area not found")
@@ -763,6 +1090,20 @@ def get_area(area_id: int, db: Session = Depends(get_db)):
 # Edit an area
 @router.put("/areas/{area_id}", response_model=AreaResponse)
 def update_area(area_id: int, area: AreaCreate, db: Session = Depends(get_db)):
+    """
+    Update an area.
+
+    Args:
+        area_id (int): The ID of the area.
+        area (AreaCreate): Updated area data.
+        db (Session): The database session.
+
+    Returns:
+        AreaResponse: The updated area.
+
+    Raises:
+        HTTPException: If area is not found.
+    """
     area_to_update = db.query(Area).filter(Area.id == area_id).first()
     if not area_to_update:
         raise HTTPException(status_code=404, detail="Area not found")
@@ -776,6 +1117,16 @@ def update_area(area_id: int, area: AreaCreate, db: Session = Depends(get_db)):
 # Delete an area
 @router.delete("/areas/{area_id}")
 def delete_area(area_id: int, db: Session = Depends(get_db)):
+    """
+    Delete an area.
+
+    Args:
+        area_id (int): The ID of the area.
+        db (Session): The database session.
+
+    Raises:
+        HTTPException: If area is not found.
+    """
     area = db.query(Area).filter(Area.id == area_id).first()
     if not area:
         raise HTTPException(status_code=404, detail="Area not found")
@@ -786,6 +1137,16 @@ def delete_area(area_id: int, db: Session = Depends(get_db)):
 # Get all observations for a specific area
 @router.get("/areas/{area_id}/observations", response_model=List[ObservationResponse])
 def get_observations_for_area(area_id: int, db: Session = Depends(get_db)):
+    """
+    Get all observations for an area.
+
+    Args:
+        area_id (int): The ID of the area.
+        db (Session): The database session.
+
+    Returns:
+        list[ObservationResponse]: A list of observations.
+    """
     observations = (
         db.query(Observation)
         .options(
@@ -804,6 +1165,20 @@ def create_observation_for_area(
     observation: ObservationCreate,
     db: Session = Depends(get_db)
 ):
+    """
+    Create a new observation for an area.
+
+    Args:
+        area_id (int): The ID of the area.
+        observation (ObservationCreate): Observation data.
+        db (Session): The database session.
+
+    Returns:
+        ObservationResponse: The created observation.
+
+    Raises:
+        HTTPException: If area is not found.
+    """
     # Create the observation entry in the database
     area = db.query(Area).filter(Area.id == area_id).first()
     if not area:
@@ -831,6 +1206,20 @@ def create_observation_for_area(
 
 @router.patch("/observations/{observation_id}", response_model=ObservationResponse)
 def update_observation(observation_id: int, payload: ObservationUpdate, db: Session = Depends(get_db)):
+    """
+    Update an observation.
+
+    Args:
+        observation_id (int): The ID of the observation.
+        payload (ObservationUpdate): Updated data.
+        db (Session): The database session.
+
+    Returns:
+        ObservationResponse: The updated observation.
+
+    Raises:
+        HTTPException: If observation is not found.
+    """
     obs = (
         db.query(Observation)
         .options(joinedload(Observation.codes), joinedload(Observation.photos))
@@ -865,6 +1254,17 @@ async def upload_photos_for_observation(
 ):
     """
     Upload one or more image files for an observation and persist a Photo row per file.
+
+    Args:
+        observation_id (int): The ID of the observation.
+        files (list[UploadFile]): List of files to upload.
+        db (Session): The database session.
+
+    Returns:
+        dict: Success message.
+
+    Raises:
+        HTTPException: If observation is not found or upload fails.
     """
     observation = db.query(Observation).filter(Observation.id == observation_id).first()
     if not observation:
@@ -898,6 +1298,20 @@ async def upload_photos_for_inspection(
     files: List[UploadFile] = File(...),
     db: Session = Depends(get_db)
 ):
+    """
+    Upload photos for an inspection (e.g., complaint).
+
+    Args:
+        inspection_id (int): The ID of the inspection.
+        files (list[UploadFile]): List of files to upload.
+        db (Session): The database session.
+
+    Returns:
+        dict: Success message.
+
+    Raises:
+        HTTPException: If inspection is not found or upload fails.
+    """
     inspection = db.query(Inspection).filter(Inspection.id == inspection_id).first()
     if not inspection:
         raise HTTPException(status_code=404, detail="Inspection not found")
@@ -941,6 +1355,19 @@ async def upload_photos_for_inspection(
 # List all potential violations (observations flagged potential) for an inspection
 @router.get("/inspections/{inspection_id}/potential-observations", response_model=List[PotentialObservationResponse])
 def get_potential_observations_for_inspection(inspection_id: int, db: Session = Depends(get_db)):
+    """
+    Get all potential violations (flagged observations) for an inspection.
+
+    Args:
+        inspection_id (int): The ID of the inspection.
+        db (Session): The database session.
+
+    Returns:
+        list[PotentialObservationResponse]: A list of potential observations.
+
+    Raises:
+        HTTPException: If inspection is not found.
+    """
     # Ensure inspection exists
     inspection = db.query(Inspection).filter(Inspection.id == inspection_id).first()
     if not inspection:
@@ -992,6 +1419,17 @@ def get_potential_observations_for_inspection(inspection_id: int, db: Session = 
 # Get attachments for an inspection (complaint)
 @router.get("/inspections/{inspection_id}/photos")
 def get_inspection_photos(inspection_id: int, download: bool = False, db: Session = Depends(get_db)):
+    """
+    Get signed URLs for photos attached to an inspection.
+
+    Args:
+        inspection_id (int): The ID of the inspection.
+        download (bool): Download flag.
+        db (Session): The database session.
+
+    Returns:
+        list[dict]: Photo details.
+    """
     attachments = db.query(ActiveStorageAttachment).filter(
         ActiveStorageAttachment.record_id == inspection_id,
         ActiveStorageAttachment.record_type == 'Inspection',
@@ -1054,6 +1492,19 @@ def get_inspection_photos(inspection_id: int, download: bool = False, db: Sessio
 # --- Inspection comments endpoints ---
 @router.get("/inspections/{inspection_id}/comments", response_model=List[InspectionCommentResponse])
 def get_inspection_comments(inspection_id: int, db: Session = Depends(get_db)):
+    """
+    Get all comments for an inspection.
+
+    Args:
+        inspection_id (int): The ID of the inspection.
+        db (Session): The database session.
+
+    Returns:
+        list[InspectionCommentResponse]: A list of inspection comments.
+
+    Raises:
+        HTTPException: If inspection is not found.
+    """
     inspection = db.query(Inspection).filter(Inspection.id == inspection_id).first()
     if not inspection:
         raise HTTPException(status_code=404, detail="Inspection not found")
@@ -1140,6 +1591,23 @@ def create_inspection_comment(
     mentioned_contact_ids: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
+    """
+    Create a comment for an inspection.
+
+    Args:
+        inspection_id (int): The ID of the inspection.
+        content (str): Comment content.
+        user_id (int): User ID.
+        mentioned_user_ids (str, optional): Mentioned user IDs.
+        mentioned_contact_ids (str, optional): Mentioned contact IDs.
+        db (Session): The database session.
+
+    Returns:
+        InspectionCommentResponse: The created comment.
+
+    Raises:
+        HTTPException: If inspection or user is not found.
+    """
     inspection = db.query(Inspection).filter(Inspection.id == inspection_id).first()
     if not inspection:
         raise HTTPException(status_code=404, detail="Inspection not found")

@@ -34,7 +34,13 @@ def normalize_image_for_web(
     - For unknown-but-image payloads, convert to JPEG.
     - Preserve non-image files as-is.
 
-    Returns: (bytes, filename, content_type)
+    Args:
+        content (bytes): Image content bytes.
+        filename (str): Original filename.
+        reported_content_type (str | None): Original content type.
+
+    Returns:
+        tuple[bytes, str, str]: A tuple containing the (normalized bytes, new filename, new content type).
     """
     ct = (reported_content_type or "").lower()
     ext = os.path.splitext(filename or "")[1].lower()

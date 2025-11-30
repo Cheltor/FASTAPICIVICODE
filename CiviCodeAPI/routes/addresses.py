@@ -55,6 +55,19 @@ def _require_admin(token: str = Depends(oauth2_scheme), db: Session = Depends(ge
 # Get all contacts for an address
 @router.get("/addresses/{address_id}/contacts", response_model=List[ContactResponse])
 def get_address_contacts(address_id: int, db: Session = Depends(get_db)):
+    """
+    Get all contacts associated with a specific address.
+
+    Args:
+        address_id (int): The ID of the address.
+        db (Session): The database session.
+
+    Returns:
+        list[ContactResponse]: A list of contacts associated with the address.
+
+    Raises:
+        HTTPException: If the address is not found.
+    """
     address = db.query(Address).filter(Address.id == address_id).first()
     if not address:
         raise HTTPException(status_code=404, detail="Address not found")
@@ -63,6 +76,20 @@ def get_address_contacts(address_id: int, db: Session = Depends(get_db)):
 # Add a contact (existing or new) to an address
 @router.post("/addresses/{address_id}/contacts", response_model=List[ContactResponse])
 def add_address_contact(address_id: int, contact: dict = Body(...), db: Session = Depends(get_db)):
+    """
+    Add a contact (existing or new) to an address.
+
+    Args:
+        address_id (int): The ID of the address.
+        contact (dict): Contact data (including `contact_id` if existing).
+        db (Session): The database session.
+
+    Returns:
+        list[ContactResponse]: The updated list of contacts for the address.
+
+    Raises:
+        HTTPException: If the address or contact is not found.
+    """
     address = db.query(Address).filter(Address.id == address_id).first()
     if not address:
         raise HTTPException(status_code=404, detail="Address not found")
@@ -96,6 +123,20 @@ def add_address_contact(address_id: int, contact: dict = Body(...), db: Session 
 # Remove a contact from an address
 @router.delete("/addresses/{address_id}/contacts/{contact_id}", response_model=List[ContactResponse])
 def remove_address_contact(address_id: int, contact_id: int, db: Session = Depends(get_db)):
+    """
+    Remove a contact from an address.
+
+    Args:
+        address_id (int): The ID of the address.
+        contact_id (int): The ID of the contact to remove.
+        db (Session): The database session.
+
+    Returns:
+        list[ContactResponse]: The updated list of contacts for the address.
+
+    Raises:
+        HTTPException: If the contact association is not found.
+    """
     assoc = db.query(AddressContact).filter_by(address_id=address_id, contact_id=contact_id).first()
     if not assoc:
         raise HTTPException(status_code=404, detail="Contact association not found")
@@ -107,6 +148,16 @@ def remove_address_contact(address_id: int, contact_id: int, db: Session = Depen
 # Get all addresses
 @router.get("/addresses/", response_model=List[AddressResponse])
 def get_addresses(skip: int = 0, db: Session = Depends(get_db)):
+    """
+    Get a list of all addresses.
+
+    Args:
+        skip (int): Number of records to skip (pagination).
+        db (Session): The database session.
+
+    Returns:
+        list[AddressResponse]: A list of addresses.
+    """
     addresses = (
         db.query(Address)
         .order_by(Address.created_at.desc())
@@ -122,6 +173,17 @@ def search_addresses(
     limit: int = Query(5, ge=1, le=50, description="Limit the number of results"),
     db: Session = Depends(get_db)
 ):
+    """
+    Search for addresses by partial match.
+
+    Args:
+        query (str): Search term for address, property name, AKA, or owner.
+        limit (int): Maximum number of results to return.
+        db (Session): The database session.
+
+    Returns:
+        list[AddressResponse]: A list of matching addresses.
+    """
     # Perform a case-insensitive search on combadd or property_name using the query parameter
     addresses = (
         db.query(Address)
@@ -142,12 +204,34 @@ def search_addresses(
 # Get addresses by vacancy status (for potentially vacant, registered, and vacant)
 @router.get("/addresses/by-vacancy-status", response_model=List[AddressResponse])
 def get_addresses_by_vacancy_status(db: Session = Depends(get_db)):
+    """
+    Get addresses that are not occupied (e.g., vacant, potentially vacant).
+
+    Args:
+        db (Session): The database session.
+
+    Returns:
+        list[AddressResponse]: A list of non-occupied addresses.
+    """
     addresses = db.query(Address).filter(Address.vacancy_status != "occupied").all()
     return addresses
 
 # Get a single address by ID
 @router.get("/addresses/{address_id}", response_model=AddressResponse)
 def get_address(address_id: int, db: Session = Depends(get_db)):
+    """
+    Get a single address by ID.
+
+    Args:
+        address_id (int): The ID of the address.
+        db (Session): The database session.
+
+    Returns:
+        AddressResponse: The address details.
+
+    Raises:
+        HTTPException: If the address is not found.
+    """
     address = db.query(Address).filter(Address.id == address_id).first()
     if not address:
         raise HTTPException(status_code=404, detail="Address not found")
@@ -170,6 +254,20 @@ def refresh_owner_from_sdat(
     payload: SDATRefreshRequest = Body(default=None),
     db: Session = Depends(get_db),
 ):
+    """
+    Refresh address owner information from SDAT.
+
+    Args:
+        address_id (int): The ID of the address.
+        payload (SDATRefreshRequest, optional): Optional refresh parameters.
+        db (Session): The database session.
+
+    Returns:
+        SDATRefreshResponse: The refreshed address data and changes.
+
+    Raises:
+        HTTPException: If address not found, SDAT error, or missing data.
+    """
     address = db.query(Address).filter(Address.id == address_id).first()
     if not address:
         raise HTTPException(status_code=404, detail="Address not found")
@@ -248,6 +346,16 @@ def refresh_owner_from_sdat(
 # Create a new address
 @router.post("/addresses/", response_model=AddressResponse)
 def create_address(address: AddressCreate, db: Session = Depends(get_db)):
+    """
+    Create a new address.
+
+    Args:
+        address (AddressCreate): The address data to create.
+        db (Session): The database session.
+
+    Returns:
+        AddressResponse: The created address.
+    """
     new_address = Address(**address.dict())
     db.add(new_address)
     db.commit()
@@ -257,6 +365,20 @@ def create_address(address: AddressCreate, db: Session = Depends(get_db)):
 # Update an existing address
 @router.put("/addresses/{address_id}", response_model=AddressResponse)
 def update_address(address_id: int, address: AddressCreate, db: Session = Depends(get_db)):
+    """
+    Update an existing address.
+
+    Args:
+        address_id (int): The ID of the address.
+        address (AddressCreate): The updated address data.
+        db (Session): The database session.
+
+    Returns:
+        AddressResponse: The updated address.
+
+    Raises:
+        HTTPException: If the address is not found.
+    """
     existing_address = db.query(Address).filter(Address.id == address_id).first()
     if not existing_address:
         raise HTTPException(status_code=404, detail="Address not found")
@@ -271,6 +393,19 @@ def update_address(address_id: int, address: AddressCreate, db: Session = Depend
 # Delete an address (clean up dependents first)
 @router.delete("/addresses/{address_id}", response_model=AddressResponse)
 def delete_address(address_id: int, db: Session = Depends(get_db)):
+    """
+    Delete an address and its dependent records.
+
+    Args:
+        address_id (int): The ID of the address.
+        db (Session): The database session.
+
+    Returns:
+        AddressResponse: The deleted address object.
+
+    Raises:
+        HTTPException: If the address is not found or deletion fails.
+    """
     address = db.query(Address).filter(Address.id == address_id).first()
     if not address:
         raise HTTPException(status_code=404, detail="Address not found")
@@ -331,6 +466,20 @@ def delete_address(address_id: int, db: Session = Depends(get_db)):
 # PATCH route to update only the vacancy_status of an address
 @router.patch("/addresses/{address_id}/vacancy-status", response_model=AddressResponse)
 def update_vacancy_status(address_id: int, data: dict = Body(...), db: Session = Depends(get_db)):
+    """
+    Update the vacancy status of an address.
+
+    Args:
+        address_id (int): The ID of the address.
+        data (dict): Dictionary containing "vacancy_status".
+        db (Session): The database session.
+
+    Returns:
+        AddressResponse: The updated address.
+
+    Raises:
+        HTTPException: If address not found or field missing.
+    """
     address = db.query(Address).filter(Address.id == address_id).first()
     if not address:
         raise HTTPException(status_code=404, detail="Address not found")
@@ -344,6 +493,19 @@ def update_vacancy_status(address_id: int, data: dict = Body(...), db: Session =
 # Show the comments for the address
 @router.get("/addresses/{address_id}/comments", response_model=List[CommentResponse])
 def get_address_comments(address_id: int, db: Session = Depends(get_db)):
+    """
+    Get all comments for an address.
+
+    Args:
+        address_id (int): The ID of the address.
+        db (Session): The database session.
+
+    Returns:
+        list[CommentResponse]: A list of comments.
+
+    Raises:
+        HTTPException: If no comments are found.
+    """
     # Query the comments for the given address ID and order by created_at descending
     comments = db.query(Comment).filter(Comment.address_id == address_id).order_by(Comment.created_at.desc()).all()
     if not comments:
@@ -353,6 +515,17 @@ def get_address_comments(address_id: int, db: Session = Depends(get_db)):
 # Add a comment to the address
 @router.post("/addresses/{address_id}/comments", response_model=CommentResponse)
 def create_comment_for_address(address_id: int, comment: CommentCreate, db: Session = Depends(get_db)):
+    """
+    Add a comment to an address.
+
+    Args:
+        address_id (int): The ID of the address.
+        comment (CommentCreate): The comment data.
+        db (Session): The database session.
+
+    Returns:
+        CommentResponse: The created comment.
+    """
     # Create and save the comment
     new_comment = Comment(address_id=address_id, **comment.dict())
     db.add(new_comment)
@@ -363,6 +536,22 @@ def create_comment_for_address(address_id: int, comment: CommentCreate, db: Sess
 # Update a comment for the address
 @router.put("/addresses/{address_id}/comments/{comment_id}", response_model=CommentResponse)
 def update_address_comment(address_id: int, comment_id: int, comment: CommentResponse, db: Session = Depends(get_db), admin_user: User = Depends(_require_admin)):
+    """
+    Update a comment for an address.
+
+    Args:
+        address_id (int): The ID of the address.
+        comment_id (int): The ID of the comment.
+        comment (CommentResponse): The updated comment data.
+        db (Session): The database session.
+        admin_user (User): The admin user performing the update.
+
+    Returns:
+        CommentResponse: The updated comment.
+
+    Raises:
+        HTTPException: If address or comment not found.
+    """
     # Check if the address exists
     address = db.query(Address).filter(Address.id == address_id).first()
     if not address:
@@ -384,6 +573,21 @@ def update_address_comment(address_id: int, comment_id: int, comment: CommentRes
 # Delete a comment for the address
 @router.delete("/addresses/{address_id}/comments/{comment_id}", response_model=CommentResponse)
 def delete_address_comment(address_id: int, comment_id: int, db: Session = Depends(get_db), admin_user: User = Depends(_require_admin)):
+    """
+    Delete a comment for an address.
+
+    Args:
+        address_id (int): The ID of the address.
+        comment_id (int): The ID of the comment.
+        db (Session): The database session.
+        admin_user (User): The admin user performing the delete.
+
+    Returns:
+        CommentResponse: The deleted comment.
+
+    Raises:
+        HTTPException: If address or comment not found.
+    """
     # Check if the address exists
     address = db.query(Address).filter(Address.id == address_id).first()
     if not address:
@@ -402,6 +606,19 @@ def delete_address_comment(address_id: int, comment_id: int, db: Session = Depen
 # Show the violations for the address
 @router.get("/addresses/{address_id}/violations", response_model=List[ViolationResponse])
 def get_address_violations(address_id: int, db: Session = Depends(get_db)):
+    """
+    Get all violations for an address.
+
+    Args:
+        address_id (int): The ID of the address.
+        db (Session): The database session.
+
+    Returns:
+        list[ViolationResponse]: A list of violations.
+
+    Raises:
+        HTTPException: If no violations are found.
+    """
     # Query violations that are either directly attached to the address OR attached to a Unit that belongs to the address.
     # Eager-load related Unit, Address and Codes so the response includes unit information without additional queries.
     violations_query = (
@@ -439,6 +656,20 @@ def get_address_violations(address_id: int, db: Session = Depends(get_db)):
 
 @router.post("/addresses/{address_id}/violations", response_model=ViolationResponse)
 def add_address_violation(address_id: int, violation: ViolationCreate, db: Session = Depends(get_db)):
+    """
+    Add a violation to an address.
+
+    Args:
+        address_id (int): The ID of the address.
+        violation (ViolationCreate): The violation data.
+        db (Session): The database session.
+
+    Returns:
+        ViolationResponse: The created violation.
+
+    Raises:
+        HTTPException: If address is not found.
+    """
     # Check if the address exists
     address = db.query(Address).filter(Address.id == address_id).first()
     if not address:
@@ -464,6 +695,21 @@ def add_address_violation(address_id: int, violation: ViolationCreate, db: Sessi
 # Update a violation for the address
 @router.put("/addresses/{address_id}/violations/{violation_id}", response_model=ViolationResponse)
 def update_address_violation(address_id: int, violation_id: int, violation: ViolationResponse, db: Session = Depends(get_db)):
+    """
+    Update a violation for an address.
+
+    Args:
+        address_id (int): The ID of the address.
+        violation_id (int): The ID of the violation.
+        violation (ViolationResponse): The updated violation data.
+        db (Session): The database session.
+
+    Returns:
+        ViolationResponse: The updated violation.
+
+    Raises:
+        HTTPException: If address or violation not found.
+    """
     # Check if the address exists
     address = db.query(Address).filter(Address.id == address_id).first()
     if not address:
@@ -485,6 +731,20 @@ def update_address_violation(address_id: int, violation_id: int, violation: Viol
 # Delete a violation for the address
 @router.delete("/addresses/{address_id}/violations/{violation_id}", response_model=ViolationResponse)
 def delete_address_violation(address_id: int, violation_id: int, db: Session = Depends(get_db)):
+    """
+    Delete a violation for an address.
+
+    Args:
+        address_id (int): The ID of the address.
+        violation_id (int): The ID of the violation.
+        db (Session): The database session.
+
+    Returns:
+        ViolationResponse: The deleted violation.
+
+    Raises:
+        HTTPException: If address or violation not found.
+    """
     # Check if the address exists
     address = db.query(Address).filter(Address.id == address_id).first()
     if not address:
@@ -503,6 +763,19 @@ def delete_address_violation(address_id: int, violation_id: int, db: Session = D
 # Show the inspections for the address
 @router.get("/addresses/{address_id}/inspections", response_model=List[InspectionResponse])
 def get_address_inspections(address_id: int, db: Session = Depends(get_db)):
+    """
+    Get all inspections for an address.
+
+    Args:
+        address_id (int): The ID of the address.
+        db (Session): The database session.
+
+    Returns:
+        list[InspectionResponse]: A list of inspections.
+
+    Raises:
+        HTTPException: If no inspections are found.
+    """
     # Query the inspections for the given address ID and order by created_at descending
     inspections = db.query(Inspection).filter(
         Inspection.address_id == address_id,
@@ -515,6 +788,20 @@ def get_address_inspections(address_id: int, db: Session = Depends(get_db)):
 # Add an inspection to the address
 @router.post("/addresses/{address_id}/inspections", response_model=InspectionResponse)
 def add_address_inspection(address_id: int, inspection: InspectionResponse, db: Session = Depends(get_db)):
+    """
+    Add an inspection to an address.
+
+    Args:
+        address_id (int): The ID of the address.
+        inspection (InspectionResponse): The inspection data.
+        db (Session): The database session.
+
+    Returns:
+        InspectionResponse: The created inspection.
+
+    Raises:
+        HTTPException: If address is not found.
+    """
     # Check if the address exists
     address = db.query(Address).filter(Address.id == address_id).first()
     if not address:
@@ -530,6 +817,21 @@ def add_address_inspection(address_id: int, inspection: InspectionResponse, db: 
 # Update an inspection for the address
 @router.put("/addresses/{address_id}/inspections/{inspection_id}", response_model=InspectionResponse)
 def update_address_inspection(address_id: int, inspection_id: int, inspection: InspectionResponse, db: Session = Depends(get_db)):
+    """
+    Update an inspection for an address.
+
+    Args:
+        address_id (int): The ID of the address.
+        inspection_id (int): The ID of the inspection.
+        inspection (InspectionResponse): The updated inspection data.
+        db (Session): The database session.
+
+    Returns:
+        InspectionResponse: The updated inspection.
+
+    Raises:
+        HTTPException: If address or inspection not found.
+    """
     # Check if the address exists
     address = db.query(Address).filter(Address.id == address_id).first()
     if not address:
@@ -551,6 +853,20 @@ def update_address_inspection(address_id: int, inspection_id: int, inspection: I
 # Delete an inspection for the address
 @router.delete("/addresses/{address_id}/inspections/{inspection_id}", response_model=InspectionResponse)
 def delete_address_inspection(address_id: int, inspection_id: int, db: Session = Depends(get_db)):
+    """
+    Delete an inspection for an address.
+
+    Args:
+        address_id (int): The ID of the address.
+        inspection_id (int): The ID of the inspection.
+        db (Session): The database session.
+
+    Returns:
+        InspectionResponse: The deleted inspection.
+
+    Raises:
+        HTTPException: If address or inspection not found.
+    """
     # Check if the address exists
     address = db.query(Address).filter(Address.id == address_id).first()
     if not address:
@@ -569,6 +885,16 @@ def delete_address_inspection(address_id: int, inspection_id: int, db: Session =
 # Show all the units for the address
 @router.get("/addresses/{address_id}/units", response_model=List[UnitResponse])
 def get_address_units(address_id: int, db: Session = Depends(get_db)):
+    """
+    Get all units for an address.
+
+    Args:
+        address_id (int): The ID of the address.
+        db (Session): The database session.
+
+    Returns:
+        list[UnitResponse]: A list of units.
+    """
     # Query the units for the given address ID and order by created_at descending
     units = db.query(Unit).filter(Unit.address_id == address_id).order_by(Unit.created_at.desc()).all()
     
@@ -578,6 +904,20 @@ def get_address_units(address_id: int, db: Session = Depends(get_db)):
 # Add a unit to the address
 @router.post("/addresses/{address_id}/units", response_model=UnitResponse)
 def create_unit(address_id: int, unit: UnitCreate, db: Session = Depends(get_db)):
+    """
+    Add a unit to an address.
+
+    Args:
+        address_id (int): The ID of the address.
+        unit (UnitCreate): The unit data.
+        db (Session): The database session.
+
+    Returns:
+        UnitResponse: The created unit.
+
+    Raises:
+        HTTPException: If address not found or unit already exists.
+    """
     # Check if the address exists
     address = db.query(Address).filter(Address.id == address_id).first()
     if not address:
@@ -610,6 +950,19 @@ def create_unit(address_id: int, unit: UnitCreate, db: Session = Depends(get_db)
 # Unit information
 @router.get("/units/{unit_id}", response_model=UnitResponse)
 def get_unit(unit_id: int, db: Session = Depends(get_db)):
+    """
+    Get unit information by ID.
+
+    Args:
+        unit_id (int): The ID of the unit.
+        db (Session): The database session.
+
+    Returns:
+        UnitResponse: The unit details.
+
+    Raises:
+        HTTPException: If unit is not found.
+    """
     unit = db.query(Unit).filter(Unit.id == unit_id).first()
     if not unit:
         raise HTTPException(status_code=404, detail="Unit not found")
@@ -618,6 +971,19 @@ def get_unit(unit_id: int, db: Session = Depends(get_db)):
 # Get units by address ID
 @router.get("/units", response_model=List[UnitResponse])
 def get_units_by_address_id(address_id: int, db: Session = Depends(get_db)):
+    """
+    Get units by address ID (alternative endpoint).
+
+    Args:
+        address_id (int): The ID of the address.
+        db (Session): The database session.
+
+    Returns:
+        list[UnitResponse]: A list of units.
+
+    Raises:
+        HTTPException: If no units are found.
+    """
     units = db.query(Unit).filter(Unit.address_id == address_id).order_by(Unit.created_at.desc()).all()
     if not units:
         raise HTTPException(status_code=404, detail="No units found for this address")
@@ -627,6 +993,19 @@ def get_units_by_address_id(address_id: int, db: Session = Depends(get_db)):
 # Return per-unit aggregated alert counts for an address to avoid many client-side requests
 @router.get("/addresses/{address_id}/unit_alert_counts", response_model=List[schemas.UnitAlertCountsResponse])
 def get_unit_alert_counts(address_id: int, db: Session = Depends(get_db)):
+    """
+    Get aggregated alert counts per unit for an address.
+
+    Args:
+        address_id (int): The ID of the address.
+        db (Session): The database session.
+
+    Returns:
+        list[UnitAlertCountsResponse]: Aggregated counts for pending inspections, open violations, and unpaid citations.
+
+    Raises:
+        HTTPException: If address is not found.
+    """
     # Ensure the address exists
     address = db.query(Address).filter(Address.id == address_id).first()
     if not address:
@@ -683,6 +1062,19 @@ def get_unit_alert_counts(address_id: int, db: Session = Depends(get_db)):
 # Get all photos from comments for a specific address
 @router.get("/addresses/{address_id}/photos", response_model=List[dict])
 def get_address_photos(address_id: int, db: Session = Depends(get_db)):
+    """
+    Get all photos from comments associated with an address.
+
+    Args:
+        address_id (int): The ID of the address.
+        db (Session): The database session.
+
+    Returns:
+        list[dict]: A list of photo details (filename, url, content_type, etc.).
+
+    Raises:
+        HTTPException: If no comments are found.
+    """
     # Query the comments for the given address ID
     comments = db.query(Comment).filter(Comment.address_id == address_id).all()
     if not comments:
@@ -719,6 +1111,20 @@ def get_address_photos(address_id: int, db: Session = Depends(get_db)):
 # PATCH route to update a unit number (ensure uniqueness)
 @router.patch("/units/{unit_id}", response_model=UnitResponse)
 def update_unit_number(unit_id: int, data: dict = Body(...), db: Session = Depends(get_db)):
+    """
+    Update a unit number.
+
+    Args:
+        unit_id (int): The ID of the unit.
+        data (dict): Dictionary containing "number".
+        db (Session): The database session.
+
+    Returns:
+        UnitResponse: The updated unit.
+
+    Raises:
+        HTTPException: If unit not found, missing data, or duplicate number.
+    """
     unit = db.query(Unit).filter(Unit.id == unit_id).first()
     if not unit:
         raise HTTPException(status_code=404, detail="Unit not found")

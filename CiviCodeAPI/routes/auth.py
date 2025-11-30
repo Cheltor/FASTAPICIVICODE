@@ -12,6 +12,19 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
 
 
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
+    """
+    Dependency to get the current authenticated user.
+
+    Args:
+        token (str): OAuth2 token.
+        db (Session): The database session.
+
+    Returns:
+        User: The authenticated user.
+
+    Raises:
+        HTTPException: If token is invalid or user is not found.
+    """
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id = int(payload.get("sub"))
@@ -28,11 +41,19 @@ from fastapi import Request
 
 
 async def get_current_user_optional(request: Request, db: Session = Depends(get_db)) -> Optional[User]:
-    """Optional current user dependency.
+    """
+    Optional current user dependency.
 
     Reads Authorization: Bearer <token> from headers. If a valid token is present
     returns the corresponding User. If no token or an invalid token is present,
     returns None (does not raise a 401).
+
+    Args:
+        request (Request): The incoming request.
+        db (Session): The database session.
+
+    Returns:
+        User | None: The user if authenticated, else None.
     """
     auth: Optional[str] = request.headers.get("authorization")
     if not auth:

@@ -147,6 +147,11 @@ TEST_DATABASE_URL=sqlite:///./test.db pytest -q
 - **Long-lived connections:** `/settings/stream` sends heartbeat comments every 25s to survive Heroku’s idle timeout; reverse proxies should allow SSE.
 - **Secrets:** Configure all env vars via your platform (Heroku config vars, Docker secrets, etc.). Remove plaintext secrets from `.env` before sharing.
 
+## Development Standards
+
+- **Code Documentation:** All public modules, classes, and functions are documented using Google Style Python Docstrings. Please ensure any new code follows this convention.
+- **Formatting:** The project aims for clean, readable code.
+
 ## Maintenance & Troubleshooting
 
 - **New schema fields:** update `models.py`, `schemas.py`, generate an Alembic revision, run tests, and update both frontend and backend DTOs as needed.
