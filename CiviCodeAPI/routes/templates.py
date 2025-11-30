@@ -18,7 +18,7 @@ class TemplateResponse(BaseModel):
     updated_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 @router.post("/templates/", response_model=TemplateResponse)
 def upload_template(
