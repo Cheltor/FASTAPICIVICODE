@@ -27,7 +27,7 @@ def upgrade() -> None:
         sa.Column('filename', sa.String(), nullable=False),
         sa.Column('content', sa.LargeBinary(), nullable=False),
         sa.Column('created_at', sa.DateTime(), server_default=sa.func.now(), nullable=False),
-        sa.Column('updated_at', sa.DateTime(), server_default=sa.func.now(), nullable=False),
+        sa.Column('updated_at', sa.DateTime(), server_default=sa.func.now(), onupdate=sa.func.now(), nullable=False),
         sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_document_templates_id'), 'document_templates', ['id'], unique=False)
