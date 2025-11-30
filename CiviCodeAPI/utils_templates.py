@@ -1,7 +1,5 @@
 from docxtpl import DocxTemplate
 from io import BytesIO
-from datetime import date
-
 def validate_template_category(content: bytes, category: str) -> bool:
     """
     Validates that a DOCX template is valid and can be rendered with a dummy context.
