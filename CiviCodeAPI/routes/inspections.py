@@ -261,6 +261,8 @@ async def create_inspection(
     paid: bool = Form(False),
     inspector_id: Optional[int] = Form(None),
     business_id: Optional[int] = Form(None),
+    channel: Optional[str] = Form(None),
+    reported_violation_type: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
@@ -273,6 +275,8 @@ async def create_inspection(
         paid=paid,
         inspector_id=inspector_id,
         business_id=business_id,
+        channel=channel,
+        reported_violation_type=reported_violation_type,
     )
     db.add(new_inspection)
     db.commit()
@@ -536,7 +540,8 @@ def update_inspection_assignee(
         .first()
     )
     return updated
-# Update schedule for an inspection
+
+# Update the scheduled datetime for an inspection or complaint
 @router.patch("/inspections/{inspection_id}/schedule", response_model=InspectionResponse)
 def update_inspection_schedule(
     inspection_id: int,
