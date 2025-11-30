@@ -21,7 +21,7 @@ class TemplateResponse(BaseModel):
     updated_at: datetime
 
     class Config:
-        from_attributes = True
+        orm_mode = True
 
 @router.post("/templates/", response_model=TemplateResponse)
 def upload_template(
@@ -48,6 +48,9 @@ def upload_template(
         )
 
     content = file.file.read()
+
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=400, detail="File size exceeds the 10MB limit.")
 
     try:
         validate_template_category(content, category)
