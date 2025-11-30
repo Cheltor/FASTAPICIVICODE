@@ -67,7 +67,7 @@ def upload_template(
 
 @router.get("/templates/", response_model=List[TemplateResponse])
 def list_templates(
-    category: Optional[str] = Query(None, regex="^(violation|compliance|license)$"),
+    category: Optional[str] = Query(None, pattern="^(violation|compliance|license)$"),
     db: Session = Depends(get_db)
 ):
     query = db.query(DocumentTemplate)
