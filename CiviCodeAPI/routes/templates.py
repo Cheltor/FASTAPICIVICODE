@@ -18,7 +18,7 @@ class TemplateResponse(BaseModel):
     updated_at: datetime
 
     class Config:
-        from_attributes = True
+        orm_mode = True
 
 @router.post("/templates/", response_model=TemplateResponse)
 def upload_template(
@@ -33,7 +33,12 @@ def upload_template(
     if not file.filename.endswith('.docx'):
         raise HTTPException(status_code=400, detail="Only .docx files are allowed.")
 
+    # Check file size (limit to 10MB)
+    MAX_FILE_SIZE = 10 * 1024 * 1024
     content = file.file.read()
+
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=400, detail="File size exceeds the 10MB limit.")
 
     try:
         validate_template_category(content, category)
@@ -53,7 +58,7 @@ def upload_template(
 
 @router.get("/templates/", response_model=List[TemplateResponse])
 def list_templates(
-    category: Optional[str] = Query(None, pattern="^(violation|compliance|license)$"),
+    category: Optional[str] = Query(None, regex="^(violation|compliance|license)$"),
     db: Session = Depends(get_db)
 ):
     query = db.query(DocumentTemplate)

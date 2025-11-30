@@ -63,7 +63,7 @@ app.include_router(codes_router)
 # Include the code sync MVP routes
 app.include_router(codes_sync_mvp_router)
 
-# Include the licecnse routes from routes.py
+# Include the license routes from routes.py
 app.include_router(licenses_router)
 
 # Include the dashboard routes from routes.py

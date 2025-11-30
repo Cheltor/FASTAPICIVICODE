@@ -1,5 +1,9 @@
 from docxtpl import DocxTemplate
 from io import BytesIO
+import logging
+
+logger = logging.getLogger(__name__)
+
 def validate_template_category(content: bytes, category: str) -> bool:
     """
     Validates that a DOCX template is valid and can be rendered with a dummy context.
@@ -55,4 +59,6 @@ def validate_template_category(content: bytes, category: str) -> bool:
         doc.render(dummy_context)
         return True
     except Exception as e:
-        raise ValueError(f"Template validation failed: {str(e)}")
+        logger.error(f"Template validation failed: {e}")
+        # Return a sanitized error message
+        raise ValueError("Invalid template file. Please ensure it is a valid .docx file and compatible with the selected category.")
