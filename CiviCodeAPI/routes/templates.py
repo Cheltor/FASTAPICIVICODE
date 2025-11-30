@@ -9,6 +9,9 @@ from datetime import datetime
 
 router = APIRouter()
 
+# Maximum file size for template uploads (10 MB)
+MAX_TEMPLATE_SIZE_BYTES = 10 * 1024 * 1024
+
 class TemplateResponse(BaseModel):
     id: int
     name: str
@@ -32,6 +35,17 @@ def upload_template(
 
     if not file.filename.endswith('.docx'):
         raise HTTPException(status_code=400, detail="Only .docx files are allowed.")
+
+    # Check file size before reading into memory to prevent DoS
+    file.file.seek(0, 2)  # Seek to end of file
+    file_size = file.file.tell()
+    file.file.seek(0)  # Reset to beginning
+    
+    if file_size > MAX_TEMPLATE_SIZE_BYTES:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"File size exceeds maximum allowed size of {MAX_TEMPLATE_SIZE_BYTES // (1024 * 1024)} MB."
+        )
 
     content = file.file.read()
 
