@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, Float, DateTime, ForeignKey, Text, BigInteger, Date, func, UniqueConstraint, text
+from sqlalchemy import Column, Integer, String, Boolean, Float, DateTime, ForeignKey, Text, BigInteger, Date, func, UniqueConstraint, text, LargeBinary
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime, timedelta
@@ -96,6 +96,20 @@ class ActiveStorageVariantRecord(Base):
     id = Column(BigInteger, primary_key=True, index=True)
     blob_id = Column(BigInteger, ForeignKey('active_storage_blobs.id'), nullable=False)
     variation_digest = Column(String, nullable=False)
+
+
+# Document Templates
+class DocumentTemplate(Base):
+    __tablename__ = "document_templates"
+
+    id = Column(BigInteger, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    category = Column(String, nullable=False)  # 'violation', 'compliance', 'license'
+    filename = Column(String, nullable=False)
+    content = Column(LargeBinary, nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+
 
 # Addresses
 class Address(Base):
