@@ -59,6 +59,6 @@ def validate_template_category(content: bytes, category: str) -> bool:
         doc.render(dummy_context)
         return True
     except Exception as e:
-        logger.error(f"Template validation failed: {e}")
+        logger.error(f"Template validation failed: {type(e).__name__}: {e}", exc_info=True)
         # Return a sanitized error message
         raise ValueError("Invalid template file. Please ensure it is a valid .docx file and compatible with the selected category.")
