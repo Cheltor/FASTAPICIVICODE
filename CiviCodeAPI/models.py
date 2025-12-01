@@ -621,6 +621,7 @@ class User(Base):
     name = Column(String)
     phone = Column(String)
     role = Column(Integer, default=0)
+    active = Column(Boolean, nullable=False, server_default=text('true'), default=True)
     created_at = Column(DateTime, default=func.now(), nullable=False)  # Auto-generate created_at timestamp
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)  # Auto-update updated_at timestamp
 

@@ -35,19 +35,28 @@ def search_users(q: str = "", db: Session = Depends(get_db)):
     if not q:
         return []
     q_like = f"%{q}%"
-    users = db.query(User).filter((User.name.ilike(q_like)) | (User.email.ilike(q_like))).limit(20).all()
+    users = (
+        db.query(User)
+        .filter(User.active == True)  # noqa: E712
+        .filter((User.name.ilike(q_like)) | (User.email.ilike(q_like)))
+        .limit(20)
+        .all()
+    )
     return users
 
 # Show all the users
 @router.get("/users/", response_model=List[UserResponse])
-def get_users(skip: int = 0, db: Session = Depends(get_db)):
-    users = db.query(User).order_by(User.created_at.desc()).offset(skip).all()
+def get_users(skip: int = 0, active: Union[bool, None] = None, db: Session = Depends(get_db)):
+    query = db.query(User)
+    if active is not None:
+        query = query.filter(User.active == active)
+    users = query.order_by(User.created_at.desc()).offset(skip).all()
     return users
 
 # Get users by ONS
 @router.get("/users/ons/", response_model=List[UserResponse])
 def get_ons_users(db: Session = Depends(get_db)):
-    users = db.query(User).filter(User.role == 1).all()
+    users = db.query(User).filter(User.role == 1, User.active == True).all()  # noqa: E712
     return users
 
 # login
@@ -62,6 +71,11 @@ async def login(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
             headers={"WWW-Authenticate": "Bearer"},
+        )
+    if user.active is False:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is inactive. Contact an administrator.",
         )
 
     # Create a token with the user ID as payload
@@ -83,6 +97,8 @@ async def read_users_me(
     user = db.query(User).filter(User.id == user_id).first()
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
+    if user.active is False:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is inactive")
     return user
 
 # Get a specific user by ID
@@ -96,7 +112,10 @@ def get_user(user_id: int, db: Session = Depends(get_db)):
 # Create a new user
 @router.post("/users/", response_model=UserResponse)
 def create_user(user: UserCreate, db: Session = Depends(get_db)):
-    new_user = User(**user.dict())
+    payload = user.dict()
+    if payload.get("active") is None:
+        payload["active"] = True
+    new_user = User(**payload)
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
