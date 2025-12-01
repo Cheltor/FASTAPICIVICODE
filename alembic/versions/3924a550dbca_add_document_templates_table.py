@@ -30,9 +30,7 @@ def upgrade() -> None:
         sa.Column('updated_at', sa.DateTime(), server_default=sa.func.now(), onupdate=sa.func.now(), nullable=False),
         sa.PrimaryKeyConstraint('id')
     )
-    op.create_index(op.f('ix_document_templates_id'), 'document_templates', ['id'], unique=False)
 
 
 def downgrade() -> None:
-    op.drop_index(op.f('ix_document_templates_id'), table_name='document_templates')
     op.drop_table('document_templates')
