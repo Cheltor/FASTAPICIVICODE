@@ -79,12 +79,14 @@ def delete_template(template_id: int, db: Session = Depends(get_db)):
 @router.get("/templates/{template_id}/download")
 def download_template(template_id: int, db: Session = Depends(get_db)):
     from fastapi.responses import Response
+    from urllib.parse import quote
     template = db.query(DocumentTemplate).filter(DocumentTemplate.id == template_id).first()
     if not template:
         raise HTTPException(status_code=404, detail="Template not found")
 
+    safe_filename = quote(template.filename, safe='')
     headers = {
-        'Content-Disposition': f'attachment; filename="{template.filename}"'
+        'Content-Disposition': f'attachment; filename="{safe_filename}"'
     }
     return Response(
         content=template.content,
