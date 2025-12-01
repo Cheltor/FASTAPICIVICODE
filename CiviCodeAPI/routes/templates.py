@@ -30,7 +30,7 @@ def upload_template(
     if category not in ['violation', 'compliance', 'license']:
         raise HTTPException(status_code=400, detail="Invalid category. Must be 'violation', 'compliance', or 'license'.")
 
-    if not file.filename.endswith('.docx'):
+    if not file.filename or not file.filename.endswith('.docx'):
         raise HTTPException(status_code=400, detail="Only .docx files are allowed.")
 
     # Check file size (limit to 10MB)
