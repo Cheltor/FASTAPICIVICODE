@@ -18,7 +18,7 @@ def _get_template_doc(db: Session, template_id: Optional[int], default_filename:
             raise HTTPException(status_code=404, detail=f"Template with id {template_id} not found")
 
         if template.category != expected_category:
-             raise HTTPException(status_code=400, detail=f"Selected template is for '{template.category}', but expected '{expected_category}'")
+            raise HTTPException(status_code=400, detail=f"Selected template is for '{template.category}', but expected '{expected_category}'")
 
         return DocxTemplate(BytesIO(template.content))
     else:
