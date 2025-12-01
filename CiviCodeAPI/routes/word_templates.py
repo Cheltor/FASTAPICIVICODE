@@ -1,16 +1,93 @@
 from fastapi import APIRouter, HTTPException, Response, Depends
 from sqlalchemy.orm import Session, joinedload
 from database import get_db
-from models import Violation, License, Inspection, Business
+from models import Violation, License, Inspection, Business, ActiveStorageAttachment, ActiveStorageBlob, ViolationCodePhoto
 from docxtpl import DocxTemplate
+from docx.shared import Inches
 from io import BytesIO
 import os
+import logging
 from datetime import date
+import storage
+from media_service import ensure_blob_browser_safe
 
 router = APIRouter()
 
+def _collect_violation_photos(db: Session, violation_id: int):
+    """Return violation attachments with their linked codes for templating."""
+    code_links = db.query(ViolationCodePhoto).filter(ViolationCodePhoto.violation_id == violation_id).all()
+    codes_by_attachment = {}
+    for link in code_links:
+        codes_by_attachment.setdefault(link.attachment_id, []).append(link.code_id)
+
+    attachment_rows = (
+        db.query(ActiveStorageAttachment, ActiveStorageBlob)
+        .join(ActiveStorageBlob, ActiveStorageBlob.id == ActiveStorageAttachment.blob_id)
+        .filter(
+            ActiveStorageAttachment.record_id == violation_id,
+            ActiveStorageAttachment.record_type == "Violation",
+            ActiveStorageAttachment.name == "photos",
+        )
+        .all()
+    )
+    photos = []
+    for attachment, blob in attachment_rows:
+        if not blob:
+            continue
+        try:
+            blob = ensure_blob_browser_safe(db, blob)
+        except Exception as e:
+            logging.exception(f"On-demand conversion failed for blob {getattr(blob, 'key', '?')}: {e}")
+        photos.append({
+            "attachment": attachment,
+            "blob": blob,
+            "code_ids": codes_by_attachment.get(attachment.id, []),
+        })
+    return photos
+
+def _append_code_photos_to_doc(doc: DocxTemplate, violation: Violation, photos: list) -> None:
+    """Append a photo evidence section grouped by code (images only)."""
+    if not photos:
+        return
+    images_only = [p for p in photos if (p.get("blob") and (p["blob"].content_type or "").lower().startswith("image/"))]
+    if not images_only:
+        return
+
+    photos_by_code = {}
+    for item in images_only:
+        codes = item.get("code_ids") or []
+        if not codes:
+            continue  # leave unassigned photos out of the notice
+        else:
+            for cid in codes:
+                photos_by_code.setdefault(cid, []).append(item)
+
+    # Add a page break before photos to keep notices tidy
+    doc.add_page_break()
+    doc.add_heading("Photo Evidence", level=1)
+
+    for code in getattr(violation, "codes", []) or []:
+        code_items = photos_by_code.get(code.id, [])
+        if not code_items:
+            continue
+        doc.add_heading(f"{code.chapter}{'.' + code.section if code.section else ''}: {code.name}", level=2)
+        for item in code_items:
+            try:
+                client = storage.blob_service_client.get_blob_client(
+                    container=storage.CONTAINER_NAME,
+                    blob=item["blob"].key,
+                )
+                data = client.download_blob().readall()
+                doc.add_picture(BytesIO(data), width=Inches(4.5))
+                if item["blob"].filename:
+                    caption = doc.add_paragraph(item["blob"].filename)
+                    caption.style = doc.styles['Normal']
+            except Exception as e:
+                logging.exception(f"Failed to embed photo for code {code.id}: {e}")
+
 @router.get("/violation/{violation_id}/notice")
 def generate_violation_notice(violation_id: int, db: Session = Depends(get_db)):
+    storage.ensure_initialized()
     violation = (
         db.query(Violation)
         .filter(Violation.id == violation_id)
@@ -23,6 +100,8 @@ def generate_violation_notice(violation_id: int, db: Session = Depends(get_db)):
     )
     if not violation:
         raise HTTPException(status_code=404, detail="Violation not found")
+
+    photos = _collect_violation_photos(db, violation_id)
 
     # Prepare context for the template
     context = {
@@ -51,6 +130,7 @@ def generate_violation_notice(violation_id: int, db: Session = Depends(get_db)):
     template_path = os.path.join(os.path.dirname(__file__), "../templates/violation_notice_template.docx")
     doc = DocxTemplate(template_path)
     doc.render(context)
+    _append_code_photos_to_doc(doc, violation, photos)
 
     file_stream = BytesIO()
     doc.save(file_stream)

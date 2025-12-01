@@ -221,6 +221,10 @@ class ViolationFromCommentRequest(BaseModel):
         return value
 
 
+class AttachmentCodeUpdate(BaseModel):
+    code_ids: List[int] = Field(default_factory=list)
+
+
 class ViolationResponse(ViolationBase):
     id: int
     created_at: datetime

@@ -1,3 +1,4 @@
+import json
 from datetime import date, datetime, timedelta
 from fastapi import (
     APIRouter,
@@ -11,9 +12,9 @@ from fastapi import (
     Query,
 )
 from sqlalchemy.orm import Session, joinedload
-from typing import List, Optional
+from typing import Dict, List, Optional
 from azure.storage.blob import generate_blob_sas, BlobSasPermissions
-from models import Violation, Citation, ActiveStorageAttachment, ActiveStorageBlob, User, Notification
+from models import Violation, Citation, ActiveStorageAttachment, ActiveStorageBlob, User, Notification, ViolationCodePhoto
 from sqlalchemy import or_
 from email_service import send_notification_email
 import schemas
@@ -31,6 +32,113 @@ router = APIRouter()
 def _ensure_storage_init() -> None:
     """Ensure Azure storage clients are initialized so account metadata is populated."""
     storage.ensure_initialized()
+
+def _parse_code_ids(raw_codes) -> List[int]:
+    """Best-effort parsing for code IDs provided via multipart form or JSON body."""
+    if raw_codes is None:
+        return []
+    # Already a list (from JSON body)
+    if isinstance(raw_codes, list):
+        parsed = []
+        for val in raw_codes:
+            try:
+                parsed.append(int(val))
+            except (TypeError, ValueError):
+                continue
+        return parsed
+    if isinstance(raw_codes, str):
+        txt = raw_codes.strip()
+        if not txt:
+            return []
+        # Try JSON first
+        try:
+            data = json.loads(txt)
+            if isinstance(data, list):
+                parsed = []
+                for val in data:
+                    try:
+                        parsed.append(int(val))
+                    except (TypeError, ValueError):
+                        continue
+                return parsed
+        except json.JSONDecodeError:
+            pass
+        # Fallback: comma-separated values
+        parsed = []
+        for part in txt.split(","):
+            part = part.strip()
+            if not part:
+                continue
+            try:
+                parsed.append(int(part))
+            except ValueError:
+                continue
+        return parsed
+    try:
+        return [int(raw_codes)]
+    except (TypeError, ValueError):
+        return []
+
+def _validate_codes_for_violation(violation: models.Violation, code_ids: List[int]) -> List[int]:
+    """Ensure provided code IDs belong to the violation; return a deduped list or raise."""
+    if not code_ids:
+        return []
+    allowed_ids = {c.id for c in getattr(violation, "codes", [])}
+    cleaned: List[int] = []
+    invalid: List[int] = []
+    for cid in code_ids:
+        if cid in allowed_ids:
+            if cid not in cleaned:
+                cleaned.append(cid)
+        else:
+            invalid.append(cid)
+    if invalid:
+        raise HTTPException(status_code=400, detail=f"Code(s) not attached to this violation: {', '.join(map(str, invalid))}")
+    return cleaned
+
+def _set_attachment_code_links(db: Session, violation_id: int, attachment_id: int, code_ids: List[int]) -> List[int]:
+    """Replace code links for an attachment with the provided set."""
+    db.query(ViolationCodePhoto).filter(
+        ViolationCodePhoto.violation_id == violation_id,
+        ViolationCodePhoto.attachment_id == attachment_id,
+    ).delete(synchronize_session=False)
+    for cid in code_ids:
+        db.add(
+            ViolationCodePhoto(
+                violation_id=violation_id,
+                code_id=cid,
+                attachment_id=attachment_id,
+                created_at=datetime.utcnow(),
+            )
+        )
+    db.commit()
+    return code_ids
+
+def _load_violation_photo_blobs(db: Session, violation_id: int) -> List[Dict]:
+    """Return violation attachments with their associated blobs and linked codes."""
+    code_links = db.query(ViolationCodePhoto).filter(ViolationCodePhoto.violation_id == violation_id).all()
+    codes_by_attachment: Dict[int, List[int]] = {}
+    for link in code_links:
+        codes_by_attachment.setdefault(link.attachment_id, []).append(link.code_id)
+
+    attachment_rows = (
+        db.query(ActiveStorageAttachment, ActiveStorageBlob)
+        .join(ActiveStorageBlob, ActiveStorageBlob.id == ActiveStorageAttachment.blob_id)
+        .filter(
+            ActiveStorageAttachment.record_id == violation_id,
+            ActiveStorageAttachment.record_type == 'Violation',
+            ActiveStorageAttachment.name == 'photos',
+        )
+        .all()
+    )
+    results = []
+    for attachment, blob in attachment_rows:
+        results.append({
+            "attachment": attachment,
+            "blob": blob,
+            "code_ids": codes_by_attachment.get(attachment.id, []),
+        })
+    return results
 
 STATUS_STRING_TO_INT = {
     "current": 0,
@@ -151,6 +259,30 @@ def update_violation_assignee(
     violation.user_id = user_id
     db.commit()
 
+    return get_violation(violation_id, db)
+
+# Replace codes attached to a violation (e.g., add a new code after creation)
+@router.post("/violation/{violation_id}/codes", response_model=schemas.ViolationResponse)
+def update_violation_codes(
+    violation_id: int,
+    codes: List[int] = Body(..., embed=True),
+    db: Session = Depends(get_db),
+):
+    violation = db.query(models.Violation).filter(models.Violation.id == violation_id).first()
+    if not violation:
+        raise HTTPException(status_code=404, detail="Violation not found")
+    if not isinstance(codes, list) or len(codes) == 0:
+        raise HTTPException(status_code=400, detail="At least one code is required")
+
+    code_rows = db.query(models.Code).filter(models.Code.id.in_(codes)).all()
+    found_ids = {c.id for c in code_rows}
+    missing = [str(c) for c in codes if c not in found_ids]
+    if missing:
+        raise HTTPException(status_code=400, detail=f"Code(s) not found: {', '.join(missing)}")
+
+    violation.codes = code_rows
+    db.commit()
+    db.refresh(violation)
     return get_violation(violation_id, db)
 # Get a specific violation by ID
 @router.get("/violation/{violation_id}", response_model=schemas.ViolationResponse)
@@ -482,16 +614,13 @@ def get_violation_photos(violation_id: int, download: bool = False, db: Session 
         # Keep behavior lenient (like comments): return empty list if missing
         return []
 
-    attachments = db.query(ActiveStorageAttachment).filter(
-        ActiveStorageAttachment.record_id == violation_id,
-        ActiveStorageAttachment.record_type == 'Violation',
-        ActiveStorageAttachment.name == 'photos',
-    ).all()
+    attachment_rows = _load_violation_photo_blobs(db, violation_id)
 
     results = []
-    for attachment in attachments:
-        blob = db.query(ActiveStorageBlob).filter(ActiveStorageBlob.id == attachment.blob_id).first()
-        if not blob:
+    for row in attachment_rows:
+        attachment = row["attachment"]
+        blob = row["blob"]
+        if not blob or not attachment:
             continue
         # Ensure browser-safe; convert on-demand if needed (e.g., HEIC to JPEG, MOV to MP4)
         try:
@@ -529,11 +658,15 @@ def get_violation_photos(violation_id: int, download: bool = False, db: Session 
                 except Exception:
                     poster_url = None
             results.append({
+                "id": attachment.id,
+                "attachment_id": attachment.id,
+                "blob_id": attachment.blob_id,
                 "filename": blob.filename,
                 "content_type": blob.content_type,
                 "url": url,
                 "poster_url": poster_url,
                 "created_at": attachment.created_at.isoformat() if getattr(attachment, 'created_at', None) else None,
+                "code_ids": row.get("code_ids") or [],
             })
         except Exception as e:
             logging.exception(f"Failed generating SAS for blob {blob.key}: {e}")
@@ -588,6 +721,7 @@ def get_violation_comment_attachments(comment_id: int, download: bool = False, d
 async def upload_violation_photos(
     violation_id: int,
     files: List[UploadFile] = File([]),
+    code_ids: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
     """Upload attachments for a violation and create ActiveStorage records."""
@@ -595,6 +729,11 @@ async def upload_violation_photos(
     violation = db.query(models.Violation).filter(models.Violation.id == violation_id).first()
     if not violation:
         raise HTTPException(status_code=404, detail="Violation not found")
+
+    parsed_code_ids = _parse_code_ids(code_ids)
+    validated_code_ids: List[int] = []
+    if parsed_code_ids:
+        validated_code_ids = _validate_codes_for_violation(violation, parsed_code_ids)
 
     uploaded = []
     for file in files:
@@ -629,10 +768,14 @@ async def upload_violation_photos(
             )
             db.add(attachment_row)
             db.commit()
+            if validated_code_ids:
+                _set_attachment_code_links(db, violation_id, attachment_row.id, validated_code_ids)
 
             uploaded.append({
+                "attachment_id": attachment_row.id,
                 "filename": norm_filename,
                 "content_type": norm_ct,
+                "code_ids": validated_code_ids,
             })
         except Exception as e:
             logging.exception(f"Failed to upload attachment for Violation {violation_id}: {e}")
@@ -640,5 +783,34 @@ async def upload_violation_photos(
 
     return {"uploaded": uploaded}
 
+
+# Update code associations for an existing violation attachment
+@router.put("/violation/{violation_id}/photos/{attachment_id}/codes")
+def update_violation_photo_codes(
+    violation_id: int,
+    attachment_id: int,
+    payload: schemas.AttachmentCodeUpdate,
+    db: Session = Depends(get_db),
+):
+    violation = db.query(models.Violation).options(joinedload(models.Violation.codes)).filter(models.Violation.id == violation_id).first()
+    if not violation:
+        raise HTTPException(status_code=404, detail="Violation not found")
+
+    attachment = (
+        db.query(ActiveStorageAttachment)
+        .filter(
+            ActiveStorageAttachment.id == attachment_id,
+            ActiveStorageAttachment.record_type == "Violation",
+            ActiveStorageAttachment.record_id == violation_id,
+        )
+        .first()
+    )
+    if not attachment:
+        raise HTTPException(status_code=404, detail="Attachment not found for this violation")
+
+    validated_code_ids = _validate_codes_for_violation(violation, payload.code_ids or [])
+    _set_attachment_code_links(db, violation_id, attachment_id, validated_code_ids)
+
+    return {"attachment_id": attachment_id, "code_ids": validated_code_ids}
 
 

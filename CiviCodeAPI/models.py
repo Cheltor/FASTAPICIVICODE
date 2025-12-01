@@ -729,3 +729,18 @@ class Violation(Base):
             raise ValueError("Invalid deadline value")
         deadline_days = DEADLINE_VALUES[deadline_index]
         return self.created_at + timedelta(days=deadline_days) + timedelta(days=self.extend)
+
+
+# Link violation attachments to the specific code(s) they support
+class ViolationCodePhoto(Base):
+    __tablename__ = "violation_code_photos"
+
+    id = Column(BigInteger, primary_key=True, index=True)
+    violation_id = Column(BigInteger, ForeignKey('violations.id'), nullable=False)
+    code_id = Column(BigInteger, ForeignKey('codes.id'), nullable=False)
+    attachment_id = Column(BigInteger, ForeignKey('active_storage_attachments.id'), nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("violation_id", "code_id", "attachment_id", name="uq_violation_code_photos"),
+    )
