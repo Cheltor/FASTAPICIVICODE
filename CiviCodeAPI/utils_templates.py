@@ -4,13 +4,12 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-def validate_template_category(content: bytes, category: str) -> bool:
+def validate_template_category(content: bytes) -> bool:
     """
     Validates that a DOCX template is valid and can be rendered with a dummy context.
 
     Args:
         content (bytes): The raw file content.
-        category (str): The category of the template ('violation', 'compliance', 'license').
 
     Returns:
         bool: True if valid.
@@ -59,6 +58,6 @@ def validate_template_category(content: bytes, category: str) -> bool:
         doc.render(dummy_context)
         return True
     except Exception as e:
-        logger.error(f"Template validation failed: {type(e).__name__}: {e}", exc_info=True)
+        logger.error(f"Template validation failed: {e}")
         # Return a sanitized error message
         raise ValueError("Invalid template file. Please ensure it is a valid .docx file and compatible with the selected category.")
