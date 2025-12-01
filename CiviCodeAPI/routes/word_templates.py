@@ -1,17 +1,29 @@
-from fastapi import APIRouter, HTTPException, Response, Depends
+from fastapi import APIRouter, HTTPException, Response, Depends, Query
 from sqlalchemy.orm import Session, joinedload
 from database import get_db
-from models import Violation, License, Inspection, Business, ActiveStorageAttachment, ActiveStorageBlob, ViolationCodePhoto
+from models import (
+    Violation,
+    License,
+    Inspection,
+    Business,
+    ActiveStorageAttachment,
+    ActiveStorageBlob,
+    ViolationCodePhoto,
+    DocumentTemplate,
+)
 from docxtpl import DocxTemplate
 from docx.shared import Inches
 from io import BytesIO
+from typing import Optional
 import os
 import logging
 from datetime import date
+
 import storage
 from media_service import ensure_blob_browser_safe
 
 router = APIRouter()
+
 
 def _collect_violation_photos(db: Session, violation_id: int):
     """Return violation attachments with their linked codes for templating."""
@@ -45,11 +57,14 @@ def _collect_violation_photos(db: Session, violation_id: int):
         })
     return photos
 
+
 def _append_code_photos_to_doc(doc: DocxTemplate, violation: Violation, photos: list) -> None:
     """Append a photo evidence section grouped by code (images only)."""
     if not photos:
         return
-    images_only = [p for p in photos if (p.get("blob") and (p["blob"].content_type or "").lower().startswith("image/"))]
+    images_only = [
+        p for p in photos if (p.get("blob") and (p["blob"].content_type or "").lower().startswith("image/"))
+    ]
     if not images_only:
         return
 
@@ -57,12 +72,10 @@ def _append_code_photos_to_doc(doc: DocxTemplate, violation: Violation, photos: 
     for item in images_only:
         codes = item.get("code_ids") or []
         if not codes:
-            continue  # leave unassigned photos out of the notice
-        else:
-            for cid in codes:
-                photos_by_code.setdefault(cid, []).append(item)
+            continue
+        for cid in codes:
+            photos_by_code.setdefault(cid, []).append(item)
 
-    # Add a page break before photos to keep notices tidy
     doc.add_page_break()
     doc.add_heading("Photo Evidence", level=1)
 
@@ -85,16 +98,46 @@ def _append_code_photos_to_doc(doc: DocxTemplate, violation: Violation, photos: 
             except Exception as e:
                 logging.exception(f"Failed to embed photo for code {code.id}: {e}")
 
+
+def _get_template_doc(
+    db: Session,
+    template_id: Optional[int],
+    default_filename: str,
+    expected_category: str,
+) -> DocxTemplate:
+    """Retrieve DocxTemplate either from DB or local file, validating category."""
+    if template_id:
+        template = db.query(DocumentTemplate).filter(DocumentTemplate.id == template_id).first()
+        if not template:
+            raise HTTPException(status_code=404, detail=f"Template with id {template_id} not found")
+        if template.category != expected_category:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Selected template is for '{template.category}', but expected '{expected_category}'",
+            )
+        return DocxTemplate(BytesIO(template.content))
+
+    template_path = os.path.join(os.path.dirname(__file__), "../templates", default_filename)
+    if not os.path.exists(template_path):
+        raise HTTPException(status_code=500, detail=f"Template not found: {default_filename}")
+    return DocxTemplate(template_path)
+
+
 @router.get("/violation/{violation_id}/notice")
-def generate_violation_notice(violation_id: int, db: Session = Depends(get_db)):
+def generate_violation_notice(
+    violation_id: int,
+    template_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db),
+):
     storage.ensure_initialized()
+
     violation = (
         db.query(Violation)
         .filter(Violation.id == violation_id)
         .options(
             joinedload(Violation.address),
             joinedload(Violation.codes),
-            joinedload(Violation.user)
+            joinedload(Violation.user),
         )
         .first()
     )
@@ -103,7 +146,6 @@ def generate_violation_notice(violation_id: int, db: Session = Depends(get_db)):
 
     photos = _collect_violation_photos(db, violation_id)
 
-    # Prepare context for the template
     context = {
         "today": date.today().strftime("%m/%d/%Y"),
         "combadd": violation.address.combadd if violation.address else "",
@@ -123,12 +165,12 @@ def generate_violation_notice(violation_id: int, db: Session = Depends(get_db)):
                 "section": c.section,
                 "name": c.name,
                 "description": c.description,
-            } for c in violation.codes
-        ] if violation.codes else [],
+            }
+            for c in (violation.codes or [])
+        ],
     }
 
-    template_path = os.path.join(os.path.dirname(__file__), "../templates/violation_notice_template.docx")
-    doc = DocxTemplate(template_path)
+    doc = _get_template_doc(db, template_id, "violation_notice_template.docx", "violation")
     doc.render(context)
     _append_code_photos_to_doc(doc, violation, photos)
 
@@ -139,18 +181,26 @@ def generate_violation_notice(violation_id: int, db: Session = Depends(get_db)):
     headers = {
         'Content-Disposition': f'attachment; filename="violation_notice_{violation_id}.docx"'
     }
-    return Response(content=file_stream.read(), media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document", headers=headers)
+    return Response(
+        content=file_stream.read(),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers=headers,
+    )
 
 
 @router.get("/violation/{violation_id}/compliance-letter")
-def generate_compliance_letter(violation_id: int, db: Session = Depends(get_db)):
+def generate_compliance_letter(
+    violation_id: int,
+    template_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db),
+):
     violation = (
         db.query(Violation)
         .filter(Violation.id == violation_id)
         .options(
             joinedload(Violation.address),
             joinedload(Violation.codes),
-            joinedload(Violation.user)
+            joinedload(Violation.user),
         )
         .first()
     )
@@ -188,13 +238,17 @@ def generate_compliance_letter(violation_id: int, db: Session = Depends(get_db))
         "ownerstate": owner_state,
         "ownerzip": owner_zip,
         "created_at": created_at,
-        "username": (violation.user.name if violation.user and violation.user.name else violation.user.email if violation.user else ""),
+        "resolved_at": resolved_at,
+        "username": (
+            violation.user.name
+            if violation.user and violation.user.name
+            else violation.user.email if violation.user else ""
+        ),
         "userphone": (violation.user.phone if violation.user and violation.user.phone else ""),
         "violation_codes": codes_context,
     }
 
-    template_path = os.path.join(os.path.dirname(__file__), "../templates/compliance_notice_template.docx")
-    doc = DocxTemplate(template_path)
+    doc = _get_template_doc(db, template_id, "compliance_notice_template.docx", "compliance")
     doc.render(context)
 
     file_stream = BytesIO()
@@ -207,12 +261,16 @@ def generate_compliance_letter(violation_id: int, db: Session = Depends(get_db))
     return Response(
         content=file_stream.read(),
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        headers=headers
+        headers=headers,
     )
 
 
 @router.get("/license/{license_id}/download")
-def generate_license_document(license_id: int, db: Session = Depends(get_db)):
+def generate_license_document(
+    license_id: int,
+    template_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db),
+):
     lic = (
         db.query(License)
         .filter(License.id == license_id)
@@ -232,7 +290,6 @@ def generate_license_document(license_id: int, db: Session = Depends(get_db)):
         except Exception:
             business = None
 
-    # Map license types to template files
     template_map = {
         1: "FY26 Business License Template.docx",
         2: "FY26 Conditional SFR License .docx",
@@ -240,7 +297,6 @@ def generate_license_document(license_id: int, db: Session = Depends(get_db)):
     }
     tpl_filename = template_map.get(lic.license_type, "FY26 Business License Template.docx")
 
-    # Build context - include common fields expected by templates
     context = {
         "today": date.today().strftime("%m/%d/%Y"),
         "license_number": lic.license_number or "",
@@ -248,7 +304,6 @@ def generate_license_document(license_id: int, db: Session = Depends(get_db)):
         "expiration_date": lic.expiration_date.strftime("%m/%d/%Y") if lic.expiration_date else "",
         "fiscal_year": lic.fiscal_year or "",
         "conditions": lic.conditions or "",
-        # inspection/address fields
         "combadd": address.combadd if address and getattr(address, 'combadd', None) else "",
         "premisezip": address.premisezip if address and getattr(address, 'premisezip', None) else "",
         "ownername": address.ownername if address and getattr(address, 'ownername', None) else "",
@@ -256,27 +311,25 @@ def generate_license_document(license_id: int, db: Session = Depends(get_db)):
         "ownercity": address.ownercity if address and getattr(address, 'ownercity', None) else "",
         "ownerstate": address.ownerstate if address and getattr(address, 'ownerstate', None) else "",
         "ownerzip": address.ownerzip if address and getattr(address, 'ownerzip', None) else "",
-        # business fields
         "business_name": business.name if business and getattr(business, 'name', None) else "",
         "business_address": getattr(business, 'address', '') if business else "",
     }
 
-    template_path = os.path.join(os.path.dirname(__file__), "../templates", tpl_filename)
-    if not os.path.exists(template_path):
-        raise HTTPException(status_code=500, detail=f"Template not found: {tpl_filename}")
-
-    doc = DocxTemplate(template_path)
+    doc = _get_template_doc(db, template_id, tpl_filename, "license")
     doc.render(context)
 
     file_stream = BytesIO()
     doc.save(file_stream)
     file_stream.seek(0)
 
-    # Build a safe filename for download
-    def _sanitize(s):
-        return ''.join([c if c.isalnum() else '_' for c in (s or '')]).strip('_') or f'license_{license_id}'
+    def _sanitize(value: str):
+        return ''.join([c if c.isalnum() else '_' for c in (value or '')]).strip('_') or f'license_{license_id}'
 
-    primary_label = business.name if business and business.name else (address.combadd if address and getattr(address, 'combadd', None) else f'license_{license_id}')
+    primary_label = (
+        business.name if business and business.name else (
+            address.combadd if address and getattr(address, 'combadd', None) else f'license_{license_id}'
+        )
+    )
     safe = _sanitize(primary_label)
 
     headers = {
