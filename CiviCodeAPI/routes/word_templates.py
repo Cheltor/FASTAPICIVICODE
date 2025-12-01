@@ -1,16 +1,36 @@
-from fastapi import APIRouter, HTTPException, Response, Depends
+from fastapi import APIRouter, HTTPException, Response, Depends, Query
 from sqlalchemy.orm import Session, joinedload
 from database import get_db
-from models import Violation, License, Inspection, Business
+from models import Violation, License, Inspection, Business, DocumentTemplate
 from docxtpl import DocxTemplate
 from io import BytesIO
 import os
 from datetime import date
+from typing import Optional
 
 router = APIRouter()
 
+def _get_template_doc(db: Session, template_id: Optional[int], default_filename: str, expected_category: str) -> DocxTemplate:
+    """Helper to retrieve DocxTemplate either from DB or local file."""
+    if template_id:
+        template = db.query(DocumentTemplate).filter(DocumentTemplate.id == template_id).first()
+        if not template:
+            raise HTTPException(status_code=404, detail=f"Template with id {template_id} not found")
+
+        if template.category != expected_category:
+             raise HTTPException(status_code=400, detail=f"Selected template is for '{template.category}', but expected '{expected_category}'")
+
+        return DocxTemplate(BytesIO(template.content))
+    else:
+        template_path = os.path.join(os.path.dirname(__file__), "../templates", default_filename)
+        return DocxTemplate(template_path)
+
 @router.get("/violation/{violation_id}/notice")
-def generate_violation_notice(violation_id: int, db: Session = Depends(get_db)):
+def generate_violation_notice(
+    violation_id: int,
+    template_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db)
+):
     violation = (
         db.query(Violation)
         .filter(Violation.id == violation_id)
@@ -48,8 +68,7 @@ def generate_violation_notice(violation_id: int, db: Session = Depends(get_db)):
         ] if violation.codes else [],
     }
 
-    template_path = os.path.join(os.path.dirname(__file__), "../templates/violation_notice_template.docx")
-    doc = DocxTemplate(template_path)
+    doc = _get_template_doc(db, template_id, "violation_notice_template.docx", "violation")
     doc.render(context)
 
     file_stream = BytesIO()
@@ -63,7 +82,11 @@ def generate_violation_notice(violation_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/violation/{violation_id}/compliance-letter")
-def generate_compliance_letter(violation_id: int, db: Session = Depends(get_db)):
+def generate_compliance_letter(
+    violation_id: int,
+    template_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db)
+):
     violation = (
         db.query(Violation)
         .filter(Violation.id == violation_id)
@@ -113,8 +136,7 @@ def generate_compliance_letter(violation_id: int, db: Session = Depends(get_db))
         "violation_codes": codes_context,
     }
 
-    template_path = os.path.join(os.path.dirname(__file__), "../templates/compliance_notice_template.docx")
-    doc = DocxTemplate(template_path)
+    doc = _get_template_doc(db, template_id, "compliance_notice_template.docx", "compliance")
     doc.render(context)
 
     file_stream = BytesIO()
@@ -132,7 +154,11 @@ def generate_compliance_letter(violation_id: int, db: Session = Depends(get_db))
 
 
 @router.get("/license/{license_id}/download")
-def generate_license_document(license_id: int, db: Session = Depends(get_db)):
+def generate_license_document(
+    license_id: int,
+    template_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db)
+):
     lic = (
         db.query(License)
         .filter(License.id == license_id)
@@ -181,11 +207,7 @@ def generate_license_document(license_id: int, db: Session = Depends(get_db)):
         "business_address": getattr(business, 'address', '') if business else "",
     }
 
-    template_path = os.path.join(os.path.dirname(__file__), "../templates", tpl_filename)
-    if not os.path.exists(template_path):
-        raise HTTPException(status_code=500, detail=f"Template not found: {tpl_filename}")
-
-    doc = DocxTemplate(template_path)
+    doc = _get_template_doc(db, template_id, tpl_filename, "license")
     doc.render(context)
 
     file_stream = BytesIO()
