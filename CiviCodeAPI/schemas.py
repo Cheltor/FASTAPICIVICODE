@@ -317,6 +317,12 @@ class InspectionBase(BaseModel):
     unit_id: Optional[int] = None
     business_id: Optional[int] = None
     description: Optional[str] = None
+    channel: Optional[str] = None
+    reported_violation_type: Optional[str] = None
+    violation_subtype: Optional[str] = None
+    severity: Optional[str] = None
+    is_imminent_threat: Optional[bool] = False
+    duplicate_of_id: Optional[int] = None
 
 class InspectionCreate(InspectionBase):
     pass
@@ -334,6 +340,12 @@ class InspectionResponse(BaseModel):
     unit_id: Optional[int] = None
     business_id: Optional[int] = None
     comment: Optional[str] = None
+    channel: Optional[str] = None
+    reported_violation_type: Optional[str] = None
+    violation_subtype: Optional[str] = None
+    severity: Optional[str] = None
+    is_imminent_threat: Optional[bool] = False
+    duplicate_of_id: Optional[int] = None
     contact: Optional[ContactResponse] = None
     created_at: datetime
     updated_at: datetime
@@ -341,6 +353,12 @@ class InspectionResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+class InspectionTriageUpdate(BaseModel):
+    violation_subtype: Optional[str] = None
+    severity: Optional[str] = None
+    is_imminent_threat: Optional[bool] = None
+    duplicate_of_id: Optional[int] = None
 
 # --- Inspection comment schemas ---
 class InspectionCommentBase(BaseModel):

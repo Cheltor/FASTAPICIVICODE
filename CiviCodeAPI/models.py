@@ -434,6 +434,14 @@ class Inspection(Base):
     business_id = Column(BigInteger, ForeignKey('businesses.id'))
     start_time = Column(DateTime)
     paid = Column(Boolean, default=False, nullable=False)
+    channel = Column(String) # Entry channel (e.g., "Citizen Portal", "Phone")
+    reported_violation_type = Column(String) # Category of violation (e.g., "Property Maintenance")
+    
+    # Triage / Classification
+    violation_subtype = Column(String)
+    severity = Column(String) # e.g. Low, Medium, High, Critical
+    is_imminent_threat = Column(Boolean, default=False)
+    duplicate_of_id = Column(BigInteger, ForeignKey('inspections.id'), nullable=True)
 
     # Relationships
     address = relationship("Address", back_populates="inspections")
