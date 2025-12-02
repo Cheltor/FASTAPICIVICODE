@@ -2,6 +2,7 @@
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, or_
 from typing import List, Dict
+from datetime import datetime, date
 from models import (
     Violation,
     Inspection,
@@ -471,3 +472,87 @@ def get_inspections(user_id: int, db: Session = Depends(get_db)):
 
 
 
+
+@router.get("/dash/reporting", response_model=Dict)
+def get_reporting_metrics(db: Session = Depends(get_db)):
+    # 1. Case Aging Metrics (Open Violations)
+    # Buckets: <30, 30-60, 60-90, 90+
+    now = datetime.utcnow()
+    open_violations = db.query(Violation).filter(Violation.status == 0).all()
+    
+    aging_buckets = {
+        "<30 Days": 0,
+        "30-60 Days": 0,
+        "60-90 Days": 0,
+        "90+ Days": 0
+    }
+    total_age_days = 0
+    count = 0
+
+    for v in open_violations:
+        age = (now - v.created_at).days
+        total_age_days += age
+        count += 1
+        if age < 30:
+            aging_buckets["<30 Days"] += 1
+        elif age < 60:
+            aging_buckets["30-60 Days"] += 1
+        elif age < 90:
+            aging_buckets["60-90 Days"] += 1
+        else:
+            aging_buckets["90+ Days"] += 1
+
+    avg_age = round(total_age_days / count, 1) if count > 0 else 0
+
+    # 2. Rental License Compliance
+    # Statuses: Valid (paid & not expired), Expired (expired), Unpaid (not paid), Revoked (revoked)
+    # Note: Logic priority -> Revoked > Expired > Unpaid > Valid
+    licenses = db.query(License).all()
+    compliance_counts = {
+        "Valid": 0,
+        "Expired": 0,
+        "Unpaid": 0,
+        "Revoked": 0
+    }
+    
+    today = date.today()
+
+    for lic in licenses:
+        if lic.revoked:
+            compliance_counts["Revoked"] += 1
+        elif lic.expiration_date and lic.expiration_date < today:
+            compliance_counts["Expired"] += 1
+        elif not lic.paid:
+            compliance_counts["Unpaid"] += 1
+        else:
+            compliance_counts["Valid"] += 1
+
+    # 3. Time to Close Metrics (Closed Violations)
+    closed_violations = db.query(Violation).filter(Violation.status == 1, Violation.closed_at.isnot(None)).all()
+    total_close_days = 0
+    closed_count = 0
+    
+    for v in closed_violations:
+        days_to_close = (v.closed_at - v.created_at).days
+        # Ensure non-negative (in case of clock skew or data issues)
+        if days_to_close < 0: days_to_close = 0
+        total_close_days += days_to_close
+        closed_count += 1
+        
+    avg_time_to_close = round(total_close_days / closed_count, 1) if closed_count > 0 else 0
+
+    return {
+        "aging": {
+            "buckets": aging_buckets,
+            "average_age": avg_age,
+            "total_open": count
+        },
+        "compliance": {
+            "counts": compliance_counts,
+            "total_licenses": len(licenses)
+        },
+        "closure": {
+            "average_time_to_close": avg_time_to_close,
+            "total_closed_with_data": closed_count
+        }
+    }

@@ -711,6 +711,7 @@ class Violation(Base):
     business_id = Column(BigInteger)
     created_at = Column(DateTime, default=func.now(), nullable=False)  # Auto-generate created_at timestamp
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)  # Auto-update updated_at timestamp
+    closed_at = Column(DateTime, nullable=True)
 
 
     # Relationships

@@ -552,6 +552,7 @@ def abate_violation(violation_id: int, db: Session = Depends(get_db)):
     if not violation:
         raise HTTPException(status_code=404, detail="Violation not found")
     violation.status = 1  # 1 = Resolved/Closed
+    violation.closed_at = datetime.utcnow()
     db.commit()
     db.refresh(violation)
     violation_dict = violation.__dict__.copy()
@@ -580,6 +581,7 @@ def reopen_violation(violation_id: int, db: Session = Depends(get_db)):
     if not violation:
         raise HTTPException(status_code=404, detail="Violation not found")
     violation.status = 0  # 0 = Current/Open
+    violation.closed_at = None
     db.commit()
     db.refresh(violation)
     violation_dict = violation.__dict__.copy()
