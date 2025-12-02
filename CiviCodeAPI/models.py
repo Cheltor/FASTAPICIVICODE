@@ -105,6 +105,7 @@ class DocumentTemplate(Base):
     id = Column(BigInteger, primary_key=True, index=True)
     name = Column(String, nullable=False)
     category = Column(String, nullable=False)  # 'violation', 'compliance', 'license'
+    license_type = Column(Integer, nullable=True)  # New: specific license type for license templates
     filename = Column(String, nullable=False)
     content = Column(LargeBinary, nullable=False)
     created_at = Column(DateTime, default=func.now(), nullable=False)

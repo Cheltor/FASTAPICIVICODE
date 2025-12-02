@@ -16,6 +16,7 @@ class TemplateResponse(BaseModel):
     id: int
     name: str
     category: str
+    license_type: int | None = None
     filename: str
     created_at: datetime
     updated_at: datetime
@@ -28,11 +29,15 @@ def upload_template(
     file: UploadFile = File(...),
     name: str = Form(...),
     category: str = Form(...),
+    license_type: Optional[int] = Form(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     if category not in ['violation', 'compliance', 'license']:
         raise HTTPException(status_code=400, detail="Invalid category. Must be 'violation', 'compliance', or 'license'.")
+
+    if category == 'license' and license_type is None:
+        raise HTTPException(status_code=400, detail="license_type is required for license templates.")
 
     if not file.filename.lower().endswith('.docx'):
         raise HTTPException(status_code=400, detail="Only .docx files are allowed.")
@@ -55,6 +60,7 @@ def upload_template(
     new_template = DocumentTemplate(
         name=name,
         category=category,
+        license_type=license_type,
         filename=file.filename,
         content=content
     )
@@ -66,12 +72,15 @@ def upload_template(
 @router.get("/templates/", response_model=List[TemplateResponse])
 def list_templates(
     category: Optional[str] = Query(None, regex="^(violation|compliance|license)$"),
+    license_type: Optional[int] = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     query = db.query(DocumentTemplate)
     if category:
         query = query.filter(DocumentTemplate.category == category)
+    if license_type is not None:
+        query = query.filter(DocumentTemplate.license_type == license_type)
     return query.all()
 
 @router.delete("/templates/{template_id}")

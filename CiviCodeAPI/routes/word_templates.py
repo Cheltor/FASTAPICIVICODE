@@ -122,6 +122,7 @@ def _get_template_doc(
     template_id: Optional[int],
     default_filename: str,
     expected_category: str,
+    expected_license_type: Optional[int] = None,
 ) -> DocxTemplate:
     """Retrieve DocxTemplate either from DB or local file, validating category."""
     if template_id:
@@ -133,6 +134,16 @@ def _get_template_doc(
                 status_code=400,
                 detail=f"Selected template is for '{template.category}', but expected '{expected_category}'",
             )
+        if expected_category == "license" and expected_license_type is not None:
+            template_type = getattr(template, "license_type", None)
+            if template_type not in (None, expected_license_type):
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Template is for license type {template_type}, "
+                        f"but license is type {expected_license_type}"
+                    ),
+                )
         return DocxTemplate(BytesIO(template.content))
 
     template_path = os.path.join(os.path.dirname(__file__), "../templates", default_filename)
@@ -333,7 +344,13 @@ def generate_license_document(
         "business_address": getattr(business, 'address', '') if business else "",
     }
 
-    doc = _get_template_doc(db, template_id, tpl_filename, "license")
+    doc = _get_template_doc(
+        db,
+        template_id,
+        tpl_filename,
+        "license",
+        expected_license_type=getattr(lic, "license_type", None),
+    )
     doc.render(context)
 
     file_stream = BytesIO()
