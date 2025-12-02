@@ -25,6 +25,24 @@ from media_service import ensure_blob_browser_safe
 router = APIRouter()
 
 
+def _safe_add_heading(doc: DocxTemplate, text: str, level: int = 1):
+    """Add a heading, falling back to a plain paragraph when the style is missing."""
+    try:
+        return doc.add_heading(text, level=level)
+    except KeyError:
+        para = doc.add_paragraph(text)
+        # Try to preserve consistent styling even if the named heading style is absent.
+        try:
+            para.style = doc.styles['Normal']
+        except Exception:
+            pass
+        # Lightly emphasize higher-level headings so they stand out.
+        if level <= 2:
+            for run in para.runs:
+                run.bold = True
+        return para
+
+
 def _collect_violation_photos(db: Session, violation_id: int):
     """Return violation attachments with their linked codes for templating."""
     code_links = db.query(ViolationCodePhoto).filter(ViolationCodePhoto.violation_id == violation_id).all()
@@ -77,13 +95,13 @@ def _append_code_photos_to_doc(doc: DocxTemplate, violation: Violation, photos: 
             photos_by_code.setdefault(cid, []).append(item)
 
     doc.add_page_break()
-    doc.add_heading("Photo Evidence", level=1)
+    _safe_add_heading(doc, "Photo Evidence", level=1)
 
     for code in getattr(violation, "codes", []) or []:
         code_items = photos_by_code.get(code.id, [])
         if not code_items:
             continue
-        doc.add_heading(f"{code.chapter}{'.' + code.section if code.section else ''}: {code.name}", level=2)
+        _safe_add_heading(doc, f"{code.chapter}{'.' + code.section if code.section else ''}: {code.name}", level=2)
         for item in code_items:
             try:
                 client = storage.blob_service_client.get_blob_client(
