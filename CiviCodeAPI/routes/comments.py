@@ -24,14 +24,33 @@ from image_utils import normalize_image_for_web
 from media_service import ensure_blob_browser_safe
 import os
 import logging
+import json
 import uuid
 import jwt
 import re
 import models
+from urllib.parse import quote
 from email_service import send_notification_email
 
 USER_MENTION_RE = re.compile(r"@([A-Za-z0-9@._\- ]+)")
 CONTACT_MENTION_RE = re.compile(r"%([A-Za-z0-9@._\- ]+)")
+
+
+def _merge_capture_metadata(exif_meta: dict, client_capture_raw: Optional[str]) -> dict:
+    merged = dict(exif_meta or {})
+    if client_capture_raw:
+        try:
+            client_meta = json.loads(client_capture_raw)
+        except Exception:
+            client_meta = {"raw": client_capture_raw}
+        if client_meta:
+            merged["client_capture"] = client_meta
+    return merged
+
+
+def _build_blob_url(key: str, sas_token: str) -> str:
+    encoded_key = quote(key or "", safe="/")
+    return f"https://{storage.account_name}.blob.core.windows.net/{storage.CONTAINER_NAME}/{encoded_key}?{sas_token}"
 
 
 def _parse_id_values(raw) -> set[int]:
@@ -683,8 +702,8 @@ def get_comment_photos(comment_id: int, download: bool = False, db: Session = De
             logger.error(f"Error generating SAS token for blob {blob.key}: {e}")
             continue  # Skip this blob if there's an error
 
-        # Construct the secure URL with SAS token
-        blob_url = f"https://{storage.account_name}.blob.core.windows.net/{storage.CONTAINER_NAME}/{blob.key}?{sas_token}"
+        # Construct the secure URL with SAS token (encode key to handle spaces/%)
+        blob_url = _build_blob_url(blob.key, sas_token)
         poster_url = None
         if (blob.content_type or "").startswith("video/") and blob.key.lower().endswith('.mp4'):
             base = blob.key[:-4]
@@ -700,7 +719,7 @@ def get_comment_photos(comment_id: int, download: bool = False, db: Session = De
                     start=datetime.utcnow() - timedelta(minutes=5),
                     expiry=datetime.utcnow() + timedelta(hours=1),
                 )
-                poster_url = f"https://{storage.account_name}.blob.core.windows.net/{storage.CONTAINER_NAME}/{poster_key}?{poster_sas}"
+                poster_url = _build_blob_url(poster_key, poster_sas)
             except Exception:
                 poster_url = None
 
@@ -725,6 +744,7 @@ async def create_address_comment(
     mentioned_user_ids: Optional[str] = Form(None),
     mentioned_contact_ids: Optional[str] = Form(None),
     review_later: Optional[bool] = Form(False),
+    capture_metadata: Optional[str] = Form(None),
     files: List[UploadFile] = File([]),
     db: Session = Depends(get_db),
 ):
@@ -758,7 +778,8 @@ async def create_address_comment(
     for file in files:
         try:
             raw_bytes = await file.read()
-            normalized_bytes, norm_filename, norm_ct = normalize_image_for_web(raw_bytes, file.filename, file.content_type)
+            normalized_bytes, norm_filename, norm_ct, meta = normalize_image_for_web(raw_bytes, file.filename, file.content_type)
+            merged_meta = _merge_capture_metadata(meta, capture_metadata)
             blob_key = f"address-comments/{new_comment.id}/{uuid.uuid4()}-{norm_filename}"
             blob_client = storage.blob_service_client.get_blob_client(container=storage.CONTAINER_NAME, blob=blob_key)
             blob_client.upload_blob(normalized_bytes, overwrite=True, content_type=norm_ct)
@@ -767,7 +788,7 @@ async def create_address_comment(
                 key=blob_key,
                 filename=norm_filename,
                 content_type=norm_ct,
-                meta_data=None,
+                meta_data=json.dumps(merged_meta) if merged_meta else None,
                 service_name="azure",
                 byte_size=len(normalized_bytes),
                 checksum=None,
@@ -844,6 +865,7 @@ async def create_contact_comment(
     comment: str = Form(...),
     user_id: int = Form(...),
     mentioned_user_ids: Optional[str] = Form(None),
+    capture_metadata: Optional[str] = Form(None),
     files: List[UploadFile] = File([]),
     db: Session = Depends(get_db),
 ):
@@ -916,7 +938,8 @@ async def create_contact_comment(
     for file in files:
         try:
             raw = await file.read()
-            normalized_bytes, norm_filename, norm_ct = normalize_image_for_web(raw, file.filename, file.content_type)
+            normalized_bytes, norm_filename, norm_ct, meta = normalize_image_for_web(raw, file.filename, file.content_type)
+            merged_meta = _merge_capture_metadata(meta, capture_metadata)
             blob_key = f"contact-comments/{new_comment.id}/{uuid.uuid4()}-{norm_filename}"
             blob_client = storage.blob_service_client.get_blob_client(container=storage.CONTAINER_NAME, blob=blob_key)
             blob_client.upload_blob(normalized_bytes, overwrite=True, content_type=norm_ct)
@@ -926,7 +949,7 @@ async def create_contact_comment(
                 key=blob_key,
                 filename=norm_filename,
                 content_type=norm_ct,
-                meta_data=None,
+                meta_data=json.dumps(merged_meta) if merged_meta else None,
                 service_name="azure",
                 byte_size=len(normalized_bytes),
                 checksum=None,
@@ -982,7 +1005,7 @@ def get_contact_comment_attachments(comment_id: int, download: bool = False, db:
                 expiry=datetime.utcnow() + timedelta(hours=1),
                 content_disposition=(f'attachment; filename="{blob.filename}"' if download else None),
             )
-            url = f"https://{storage.account_name}.blob.core.windows.net/{storage.CONTAINER_NAME}/{blob.key}?{sas_token}"
+            url = _build_blob_url(blob.key, sas_token)
             results.append({
                 "filename": blob.filename,
                 "content_type": blob.content_type,
@@ -1058,6 +1081,7 @@ async def create_unit_comment(
     user_id: int = Form(...),
     mentioned_user_ids: Optional[str] = Form(None),
     mentioned_contact_ids: Optional[str] = Form(None),
+    capture_metadata: Optional[str] = Form(None),
     files: List[UploadFile] = File([]),
     db: Session = Depends(get_db),
 ):
@@ -1085,7 +1109,8 @@ async def create_unit_comment(
     for file in files:
         try:
             raw_bytes = await file.read()
-            normalized_bytes, norm_filename, norm_ct = normalize_image_for_web(raw_bytes, file.filename, file.content_type)
+            normalized_bytes, norm_filename, norm_ct, meta = normalize_image_for_web(raw_bytes, file.filename, file.content_type)
+            merged_meta = _merge_capture_metadata(meta, capture_metadata)
             blob_key = f"unit-comments/{new_comment.id}/{uuid.uuid4()}-{norm_filename}"
             blob_client = storage.blob_service_client.get_blob_client(container=storage.CONTAINER_NAME, blob=blob_key)
             blob_client.upload_blob(normalized_bytes, overwrite=True, content_type=norm_ct)
@@ -1094,7 +1119,7 @@ async def create_unit_comment(
                 key=blob_key,
                 filename=norm_filename,
                 content_type=norm_ct,
-                meta_data=None,
+                meta_data=json.dumps(merged_meta) if merged_meta else None,
                 service_name="azure",
                 byte_size=len(normalized_bytes),
                 checksum=None,

@@ -1,3 +1,4 @@
+import json
 import uuid
 from typing import Optional, Tuple
 
@@ -71,7 +72,7 @@ def ensure_blob_browser_safe(db: Session, blob_row: ActiveStorageBlob) -> Active
     data = src_client.download_blob().readall()
 
     # Normalize to web-friendly (JPEG)
-    new_bytes, new_filename, new_ct = normalize_image_for_web(data, filename, ct)
+    new_bytes, new_filename, new_ct, meta = normalize_image_for_web(data, filename, ct)
     new_key = _derive_new_key(blob_row.key, new_filename)
 
     # Upload converted blob
@@ -83,6 +84,7 @@ def ensure_blob_browser_safe(db: Session, blob_row: ActiveStorageBlob) -> Active
     blob_row.filename = new_filename
     blob_row.content_type = new_ct
     blob_row.byte_size = len(new_bytes)
+    blob_row.meta_data = json.dumps(meta) if meta else None
     db.add(blob_row)
     db.commit()
     db.refresh(blob_row)

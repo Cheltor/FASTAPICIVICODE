@@ -26,6 +26,7 @@ from image_utils import normalize_image_for_web
 from media_service import ensure_blob_browser_safe
 import uuid
 import logging
+from urllib.parse import quote
 
 router = APIRouter()
 
@@ -146,6 +147,23 @@ STATUS_STRING_TO_INT = {
     "pending trial": 2,
     "dismissed": 3,
 }
+
+
+def _merge_capture_metadata(exif_meta: dict, client_capture_raw: Optional[str]) -> dict:
+    merged = dict(exif_meta or {})
+    if client_capture_raw:
+        try:
+            client_meta = json.loads(client_capture_raw)
+        except Exception:
+            client_meta = {"raw": client_capture_raw}
+        if client_meta:
+            merged["client_capture"] = client_meta
+    return merged
+
+
+def _build_blob_url(key: str, sas_token: str) -> str:
+    encoded_key = quote(key or "", safe="/")
+    return f"https://{storage.account_name}.blob.core.windows.net/{storage.CONTAINER_NAME}/{encoded_key}?{sas_token}"
 
 # Extend deadline for a violation
 @router.patch("/violation/{violation_id}/deadline", response_model=schemas.ViolationResponse)
@@ -454,6 +472,7 @@ async def add_violation_comment_with_attachments(
     violation_id: int,
     content: str = Form(...),
     user_id: int = Form(...),
+    capture_metadata: Optional[str] = Form(None),
     files: List[UploadFile] = File([]),
     db: Session = Depends(get_db),
 ):
@@ -501,17 +520,19 @@ async def add_violation_comment_with_attachments(
     for file in files:
         try:
             content_bytes = await file.read()
-            blob_key = f"violation-comments/{new_comment.id}/{uuid.uuid4()}-{file.filename}"
+            normalized_bytes, norm_filename, norm_ct, meta = normalize_image_for_web(content_bytes, file.filename, file.content_type)
+            merged_meta = _merge_capture_metadata(meta, capture_metadata)
+            blob_key = f"violation-comments/{new_comment.id}/{uuid.uuid4()}-{norm_filename}"
             blob_client = storage.blob_service_client.get_blob_client(container=storage.CONTAINER_NAME, blob=blob_key)
-            blob_client.upload_blob(content_bytes, overwrite=True, content_type=file.content_type)
+            blob_client.upload_blob(normalized_bytes, overwrite=True, content_type=norm_ct)
 
             blob_row = ActiveStorageBlob(
                 key=blob_key,
-                filename=file.filename,
-                content_type=file.content_type,
-                meta_data=None,
+                filename=norm_filename,
+                content_type=norm_ct,
+                meta_data=json.dumps(merged_meta) if merged_meta else None,
                 service_name="azure",
-                byte_size=len(content_bytes),
+                byte_size=len(normalized_bytes),
                 checksum=None,
                 created_at=datetime.utcnow(),
             )
@@ -641,7 +662,7 @@ def get_violation_photos(violation_id: int, download: bool = False, db: Session 
                 expiry=datetime.utcnow() + timedelta(hours=1),
                 content_disposition=(f'attachment; filename="{blob.filename}"' if download else None),
             )
-            url = f"https://{storage.account_name}.blob.core.windows.net/{storage.CONTAINER_NAME}/{blob.key}?{sas_token}"
+            url = _build_blob_url(blob.key, sas_token)
             poster_url = None
             if (blob.content_type or "").startswith("video/") and blob.key.lower().endswith('.mp4'):
                 base = blob.key[:-4]
@@ -656,7 +677,7 @@ def get_violation_photos(violation_id: int, download: bool = False, db: Session 
                         start=datetime.utcnow() - timedelta(minutes=5),
                         expiry=datetime.utcnow() + timedelta(hours=1),
                     )
-                    poster_url = f"https://{storage.account_name}.blob.core.windows.net/{storage.CONTAINER_NAME}/{poster_key}?{poster_sas}"
+                    poster_url = _build_blob_url(poster_key, poster_sas)
                 except Exception:
                     poster_url = None
             results.append({
@@ -706,7 +727,7 @@ def get_violation_comment_attachments(comment_id: int, download: bool = False, d
                 expiry=datetime.utcnow() + timedelta(hours=1),
                 content_disposition=(f'attachment; filename="{blob.filename}"' if download else None),
             )
-            url = f"https://{storage.account_name}.blob.core.windows.net/{storage.CONTAINER_NAME}/{blob.key}?{sas_token}"
+            url = _build_blob_url(blob.key, sas_token)
             results.append({
                 "filename": blob.filename,
                 "content_type": blob.content_type,
@@ -724,6 +745,7 @@ async def upload_violation_photos(
     violation_id: int,
     files: List[UploadFile] = File([]),
     code_ids: Optional[str] = Form(None),
+    capture_metadata: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
     """Upload attachments for a violation and create ActiveStorage records."""
@@ -742,7 +764,8 @@ async def upload_violation_photos(
         try:
             # Read and normalize image/video for web (HEIC->JPEG, MOV->MP4 handled downstream if needed)
             raw_bytes = await file.read()
-            normalized_bytes, norm_filename, norm_ct = normalize_image_for_web(raw_bytes, file.filename, file.content_type)
+            normalized_bytes, norm_filename, norm_ct, meta = normalize_image_for_web(raw_bytes, file.filename, file.content_type)
+            merged_meta = _merge_capture_metadata(meta, capture_metadata)
             blob_key = f"violations/{violation_id}/{uuid.uuid4()}-{norm_filename}"
             blob_client = storage.blob_service_client.get_blob_client(container=storage.CONTAINER_NAME, blob=blob_key)
             blob_client.upload_blob(normalized_bytes, overwrite=True, content_type=norm_ct)
@@ -751,7 +774,7 @@ async def upload_violation_photos(
                 key=blob_key,
                 filename=norm_filename,
                 content_type=norm_ct,
-                meta_data=None,
+                meta_data=json.dumps(merged_meta) if merged_meta else None,
                 service_name="azure",
                 byte_size=len(normalized_bytes),
                 checksum=None,

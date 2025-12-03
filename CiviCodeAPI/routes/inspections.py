@@ -15,12 +15,31 @@ import storage
 from image_utils import normalize_image_for_web
 from datetime import datetime, timedelta, date
 from azure.storage.blob import generate_blob_sas, BlobSasPermissions
+import json
 import uuid
 from media_service import ensure_blob_browser_safe
 from email_service import send_notification_email
 from .auth import get_current_user, get_current_user_optional
+from urllib.parse import quote
 
 router = APIRouter()
+
+
+def _merge_capture_metadata(exif_meta: dict, client_capture_raw: Optional[str]) -> dict:
+    merged = dict(exif_meta or {})
+    if client_capture_raw:
+        try:
+            client_meta = json.loads(client_capture_raw)
+        except Exception:
+            client_meta = {"raw": client_capture_raw}
+        if client_meta:
+            merged["client_capture"] = client_meta
+    return merged
+
+
+def _build_blob_url(key: str, sas_token: str) -> str:
+    encoded_key = quote(key or "", safe="/")
+    return f"https://{storage.account_name}.blob.core.windows.net/{storage.CONTAINER_NAME}/{encoded_key}?{sas_token}"
 
 # Internal helper to create a notification when assigning/reassigning
 def _create_assignment_notification(
@@ -263,6 +282,7 @@ async def create_inspection(
     business_id: Optional[int] = Form(None),
     channel: Optional[str] = Form(None),
     reported_violation_type: Optional[str] = Form(None),
+    capture_metadata: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
@@ -285,7 +305,8 @@ async def create_inspection(
     for attachment in attachments:
         try:
             raw = await attachment.read()
-            normalized_bytes, norm_filename, norm_ct = normalize_image_for_web(raw, attachment.filename, attachment.content_type)
+            normalized_bytes, norm_filename, norm_ct, meta = normalize_image_for_web(raw, attachment.filename, attachment.content_type)
+            merged_meta = _merge_capture_metadata(meta, capture_metadata)
             blob_key = f"inspections/{new_inspection.id}/{uuid.uuid4()}-{norm_filename}"
             blob_client = storage.blob_service_client.get_blob_client(container=storage.CONTAINER_NAME, blob=blob_key)
             blob_client.upload_blob(normalized_bytes, overwrite=True, content_type=norm_ct)
@@ -294,7 +315,7 @@ async def create_inspection(
                 key=blob_key,
                 filename=norm_filename,
                 content_type=norm_ct,
-                meta_data=None,
+                meta_data=json.dumps(merged_meta) if merged_meta else None,
                 service_name="azure",
                 byte_size=len(normalized_bytes),
                 checksum=None,
@@ -878,13 +899,14 @@ async def upload_photos_for_observation(
     for file in files:
         try:
             raw = await file.read()
-            normalized_bytes, norm_filename, norm_ct = normalize_image_for_web(raw, file.filename, file.content_type)
+            normalized_bytes, norm_filename, norm_ct, _meta = normalize_image_for_web(raw, file.filename, file.content_type)
             blob_name = f"observations/{observation_id}/{uuid.uuid4()}-{norm_filename}"
             blob_client = storage.blob_service_client.get_blob_client(container=storage.CONTAINER_NAME, blob=blob_name)
             blob_client.upload_blob(normalized_bytes, overwrite=True, content_type=norm_ct)
 
             # Persist photo record referencing the uploaded blob
-            photo_url = f"https://{storage.account_name}.blob.core.windows.net/{storage.CONTAINER_NAME}/{blob_name}"
+            encoded_blob_name = quote(blob_name or "", safe="/")
+            photo_url = f"https://{storage.account_name}.blob.core.windows.net/{storage.CONTAINER_NAME}/{encoded_blob_name}"
             db_photo = Photo(url=photo_url, observation_id=observation_id)
             db.add(db_photo)
         except Exception as e:
@@ -901,6 +923,7 @@ async def upload_photos_for_observation(
 async def upload_photos_for_inspection(
     inspection_id: int,
     files: List[UploadFile] = File(...),
+    capture_metadata: Optional[str] = Form(None),
     db: Session = Depends(get_db)
 ):
     inspection = db.query(Inspection).filter(Inspection.id == inspection_id).first()
@@ -910,7 +933,8 @@ async def upload_photos_for_inspection(
     for file in files:
         try:
             raw = await file.read()
-            normalized_bytes, norm_filename, norm_ct = normalize_image_for_web(raw, file.filename, file.content_type)
+            normalized_bytes, norm_filename, norm_ct, meta = normalize_image_for_web(raw, file.filename, file.content_type)
+            merged_meta = _merge_capture_metadata(meta, capture_metadata)
             blob_key = f"inspections/{inspection_id}/{uuid.uuid4()}-{norm_filename}"
             blob_client = storage.blob_service_client.get_blob_client(container=storage.CONTAINER_NAME, blob=blob_key)
             blob_client.upload_blob(normalized_bytes, overwrite=True, content_type=norm_ct)
@@ -919,7 +943,7 @@ async def upload_photos_for_inspection(
                 key=blob_key,
                 filename=norm_filename,
                 content_type=norm_ct,
-                meta_data=None,
+                meta_data=json.dumps(merged_meta) if merged_meta else None,
                 service_name="azure",
                 byte_size=len(normalized_bytes),
                 checksum=None,
@@ -1027,7 +1051,7 @@ def get_inspection_photos(inspection_id: int, download: bool = False, db: Sessio
                 expiry=datetime.utcnow() + timedelta(hours=1),
                 content_disposition=(f'attachment; filename="{blob.filename}"' if download else None),
             )
-            url = f"https://{storage.account_name}.blob.core.windows.net/{storage.CONTAINER_NAME}/{blob.key}?{sas_token}"
+            url = _build_blob_url(blob.key, sas_token)
             poster_url = None
             if (blob.content_type or "").startswith("video/") and blob.key.lower().endswith('.mp4'):
                 base = blob.key[:-4]
@@ -1042,7 +1066,7 @@ def get_inspection_photos(inspection_id: int, download: bool = False, db: Sessio
                         start=datetime.utcnow() - timedelta(minutes=5),
                         expiry=datetime.utcnow() + timedelta(hours=1),
                     )
-                    poster_url = f"https://{storage.account_name}.blob.core.windows.net/{storage.CONTAINER_NAME}/{poster_key}?{poster_sas}"
+                    poster_url = _build_blob_url(poster_key, poster_sas)
                 except Exception:
                     poster_url = None
             results.append({

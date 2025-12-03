@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 import sys
 import uuid
@@ -59,7 +60,7 @@ def main(dry_run: bool, limit: int | None, delete_old: bool, include_octet_strea
                 print(f"[SKIP] Failed to download {key}: {e}")
                 continue
 
-            new_bytes, new_filename, new_ct = normalize_image_for_web(content, row.filename, row.content_type or "")
+            new_bytes, new_filename, new_ct, meta = normalize_image_for_web(content, row.filename, row.content_type or "")
 
             # If normalization didn't change type (already web-friendly), skip
             if (row.content_type or "").lower() in ("image/jpeg", "image/png", "image/webp", "image/gif"):
@@ -91,6 +92,7 @@ def main(dry_run: bool, limit: int | None, delete_old: bool, include_octet_strea
             row.filename = new_filename
             row.content_type = new_ct
             row.byte_size = len(new_bytes)
+            row.meta_data = json.dumps(meta) if meta else None
             session.add(row)
             session.commit()
             processed += 1

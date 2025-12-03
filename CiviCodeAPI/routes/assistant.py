@@ -34,6 +34,18 @@ class AssistantChatResponse(BaseModel):
     thread_id: str = Field(serialization_alias="threadId")
 
 
+def _merge_capture_metadata(exif_meta: dict, client_capture_raw: Optional[str]) -> dict:
+    merged = dict(exif_meta or {})
+    if client_capture_raw:
+        try:
+            client_meta = json.loads(client_capture_raw)
+        except Exception:
+            client_meta = {"raw": client_capture_raw}
+        if client_meta:
+            merged["client_capture"] = client_meta
+    return merged
+
+
 @router.post("/assistant/chat", response_model=AssistantChatResponse)
 async def create_assistant_chat(payload: AssistantChatRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> AssistantChatResponse:
     """Proxy user messages to the configured AI assistant."""
@@ -75,13 +87,14 @@ async def create_assistant_chat(payload: AssistantChatRequest, current_user: Use
     return AssistantChatResponse(reply=reply, thread_id=thread_id)
 
 
-from fastapi import UploadFile, File
+from fastapi import UploadFile, File, Form
 from genai_client import evaluate_image_for_violation
 import json
 
 @router.post("/assistant/evaluate-image")
 async def evaluate_image(
     files: List[UploadFile] = File(...),
+    capture_metadata: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -127,7 +140,8 @@ async def evaluate_image(
         try:
             # Re-use normalization logic if possible, or just upload raw if preferred. 
             # Using normalize_image_for_web is safer for consistency.
-            normalized_bytes, norm_filename, norm_ct = normalize_image_for_web(content, filename, mime_type)
+            normalized_bytes, norm_filename, norm_ct, meta = normalize_image_for_web(content, filename, mime_type)
+            merged_meta = _merge_capture_metadata(meta, capture_metadata)
             
             blob_key = f"image-analysis-logs/{log_entry.id}/{uuid.uuid4()}-{norm_filename}"
             blob_client = storage.blob_service_client.get_blob_client(container=storage.CONTAINER_NAME, blob=blob_key)
@@ -137,6 +151,7 @@ async def evaluate_image(
                 key=blob_key,
                 filename=norm_filename,
                 content_type=norm_ct,
+                meta_data=json.dumps(merged_meta) if merged_meta else None,
                 service_name="azure",
                 byte_size=len(normalized_bytes),
                 created_at=datetime.utcnow(),

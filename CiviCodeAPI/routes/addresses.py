@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from storage import blob_service_client, CONTAINER_NAME
 from media_service import ensure_blob_browser_safe
 from database import get_db  # Ensure get_db is imported before use
+from urllib.parse import quote
 from models import Address, Comment, Violation, Inspection, Unit, Citation, ActiveStorageAttachment, ActiveStorageBlob, Contact, AddressContact, User
 import models
 from schemas import (
@@ -701,11 +702,13 @@ def get_address_photos(address_id: int, db: Session = Depends(get_db)):
                     blob = ensure_blob_browser_safe(db, blob)
                 except Exception:
                     pass
-                url = f"https://{blob_service_client.account_name}.blob.core.windows.net/{CONTAINER_NAME}/{blob.key}"
+                encoded_key = quote(blob.key or "", safe="/")
+                url = f"https://{blob_service_client.account_name}.blob.core.windows.net/{CONTAINER_NAME}/{encoded_key}"
                 poster_url = None
                 if (blob.content_type or "").startswith("video/") and blob.key.lower().endswith('.mp4'):
                     base = blob.key[:-4]
-                    poster_url = f"https://{blob_service_client.account_name}.blob.core.windows.net/{CONTAINER_NAME}/{base}-poster.jpg"
+                    encoded_poster = quote(f"{base}-poster.jpg", safe="/")
+                    poster_url = f"https://{blob_service_client.account_name}.blob.core.windows.net/{CONTAINER_NAME}/{encoded_poster}"
                 photos.append({
                     "filename": blob.filename,
                     "content_type": blob.content_type,
