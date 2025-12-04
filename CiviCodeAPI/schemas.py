@@ -9,6 +9,55 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .schemas import CodeResponse
 
+# Vacant property registration (annual)
+class VacantRegistrationBase(BaseModel):
+    registration_year: Optional[int] = None
+    status: Optional[str] = None
+    fee_amount: Optional[float] = 0.0
+    fee_paid: Optional[bool] = False
+    fee_paid_at: Optional[datetime] = None
+    fire_damage: Optional[bool] = False
+    registered_on: Optional[date] = None
+    expires_on: Optional[date] = None
+    maintenance_status: Optional[str] = None
+    maintenance_notes: Optional[str] = None
+    security_status: Optional[str] = None
+    security_notes: Optional[str] = None
+    compliance_checked_at: Optional[datetime] = None
+    notes: Optional[str] = None
+
+
+class VacantRegistrationCreate(VacantRegistrationBase):
+    pass
+
+
+class VacantRegistrationUpdate(BaseModel):
+    registration_year: Optional[int] = None
+    status: Optional[str] = None
+    fee_amount: Optional[float] = None
+    fee_paid: Optional[bool] = None
+    fee_paid_at: Optional[datetime] = None
+    fire_damage: Optional[bool] = None
+    registered_on: Optional[date] = None
+    expires_on: Optional[date] = None
+    maintenance_status: Optional[str] = None
+    maintenance_notes: Optional[str] = None
+    security_status: Optional[str] = None
+    security_notes: Optional[str] = None
+    compliance_checked_at: Optional[datetime] = None
+    notes: Optional[str] = None
+
+
+class VacantRegistrationResponse(VacantRegistrationBase):
+    id: int
+    address_id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 # Pydantic schema for address
 class AddressCreate(BaseModel):
     pid: Optional[str] = None
@@ -47,6 +96,8 @@ class AddressResponse(AddressCreate):
     ownername: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+    vacant_registrations: List[VacantRegistrationResponse] = Field(default_factory=list)
+    current_vacant_registration: Optional[VacantRegistrationResponse] = None
 
     class Config:
         from_attributes = True

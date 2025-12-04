@@ -5,11 +5,12 @@ from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional
 from sqlalchemy import or_, func
 from sqlalchemy.exc import IntegrityError
+from datetime import datetime, date, timedelta
 from storage import blob_service_client, CONTAINER_NAME
 from media_service import ensure_blob_browser_safe
 from database import get_db  # Ensure get_db is imported before use
 from urllib.parse import quote
-from models import Address, Comment, Violation, Inspection, Unit, Citation, ActiveStorageAttachment, ActiveStorageBlob, Contact, AddressContact, User
+from models import Address, Comment, Violation, Inspection, Unit, Citation, ActiveStorageAttachment, ActiveStorageBlob, Contact, AddressContact, User, VacantRegistration
 import models
 from schemas import (
     AddressCreate,
@@ -26,6 +27,9 @@ from schemas import (
     ContactCreate,
     SDATRefreshRequest,
     SDATRefreshResponse,
+    VacantRegistrationCreate,
+    VacantRegistrationResponse,
+    VacantRegistrationUpdate,
 )
 
 import schemas
@@ -52,6 +56,108 @@ def _require_admin(token: str = Depends(oauth2_scheme), db: Session = Depends(ge
     if int(getattr(user, 'role', 0)) < 3:
         raise HTTPException(status_code=403, detail="Admin access required")
     return user
+
+ACTIVE_REGISTRATION_STATUSES = {"pending", "active", "waived"}
+
+
+def _resolve_value(data: dict, key: str, existing, default=None):
+    if key in data:
+        return data[key]
+    if existing is not None:
+        return getattr(existing, key, default)
+    return default
+
+
+def _normalize_registration_payload(data: dict, existing: Optional[VacantRegistration] = None) -> dict:
+    today = date.today()
+    status_value = _resolve_value(data, "status", existing, "pending")
+    status = status_value.strip() if isinstance(status_value, str) else status_value
+    status = status or "pending"
+
+    registered_on = _resolve_value(data, "registered_on", existing, None)
+    if registered_on is None and status != "draft":
+        registered_on = today
+
+    registration_year = _resolve_value(data, "registration_year", existing, None)
+    if registration_year is None:
+        registration_year = registered_on.year if registered_on else today.year
+
+    expires_on = _resolve_value(data, "expires_on", existing, None)
+    if expires_on is None and registered_on:
+        expires_on = registered_on + timedelta(days=365)
+
+    fee_paid = bool(_resolve_value(data, "fee_paid", existing, False))
+    fee_paid_at = _resolve_value(data, "fee_paid_at", existing, None)
+    if fee_paid and fee_paid_at is None:
+        fee_paid_at = datetime.utcnow()
+    if fee_paid_at and not fee_paid:
+        fee_paid = True
+
+    fee_amount = _resolve_value(data, "fee_amount", existing, 0.0)
+    if fee_amount is None:
+        fee_amount = 0.0
+
+    fire_damage = bool(_resolve_value(data, "fire_damage", existing, False))
+    maintenance_status = _resolve_value(data, "maintenance_status", existing, None)
+    maintenance_notes = _resolve_value(data, "maintenance_notes", existing, None)
+    security_status = _resolve_value(data, "security_status", existing, None)
+    security_notes = _resolve_value(data, "security_notes", existing, None)
+    compliance_checked_at = _resolve_value(data, "compliance_checked_at", existing, None)
+    notes = _resolve_value(data, "notes", existing, None)
+
+    if expires_on and expires_on < today:
+        status = "expired"
+
+    return {
+        "registration_year": registration_year,
+        "status": status,
+        "fee_amount": fee_amount,
+        "fee_paid": fee_paid,
+        "fee_paid_at": fee_paid_at,
+        "fire_damage": fire_damage,
+        "registered_on": registered_on,
+        "expires_on": expires_on,
+        "maintenance_status": maintenance_status,
+        "maintenance_notes": maintenance_notes,
+        "security_status": security_status,
+        "security_notes": security_notes,
+        "compliance_checked_at": compliance_checked_at,
+        "notes": notes,
+    }
+
+
+def _sync_vacancy_status_for_registration(address: Address, registration: VacantRegistration):
+    if not address or not registration:
+        return
+    today = date.today()
+    if registration.expires_on and registration.expires_on < today:
+        registration.status = "expired"
+        if address.vacancy_status == "registered":
+            address.vacancy_status = "vacant"
+        return
+    is_active = registration.status in ACTIVE_REGISTRATION_STATUSES and (
+        registration.expires_on is None or registration.expires_on >= today
+    )
+    if is_active:
+        address.vacancy_status = "registered"
+    elif registration.status == "expired" and address.vacancy_status == "registered":
+        address.vacancy_status = "vacant"
+
+
+def _latest_vacant_registrations_by_address(db: Session, address_ids: List[int]) -> dict:
+    if not address_ids:
+        return {}
+    rows = (
+        db.query(VacantRegistration)
+        .filter(VacantRegistration.address_id.in_(address_ids))
+        .order_by(VacantRegistration.address_id, VacantRegistration.registration_year.desc(), VacantRegistration.created_at.desc())
+        .all()
+    )
+    latest = {}
+    for reg in rows:
+        if reg.address_id not in latest:
+            latest[reg.address_id] = reg
+    return latest
 
 # Get all contacts for an address
 @router.get("/addresses/{address_id}/contacts", response_model=List[ContactResponse])
@@ -114,6 +220,9 @@ def get_addresses(skip: int = 0, db: Session = Depends(get_db)):
         .offset(skip)
         .all()
     )
+    for addr in addresses:
+        setattr(addr, "vacant_registrations", [])
+        setattr(addr, "current_vacant_registration", None)
     return addresses
 
 # Search for addresses by partial match of combadd, with a limit on results
@@ -144,7 +253,97 @@ def search_addresses(
 @router.get("/addresses/by-vacancy-status", response_model=List[AddressResponse])
 def get_addresses_by_vacancy_status(db: Session = Depends(get_db)):
     addresses = db.query(Address).filter(Address.vacancy_status != "occupied").all()
+    reg_map = _latest_vacant_registrations_by_address(db, [addr.id for addr in addresses])
+    for addr in addresses:
+        setattr(addr, "vacant_registrations", [])
+        latest_reg = reg_map.get(addr.id)
+        if latest_reg:
+            _sync_vacancy_status_for_registration(addr, latest_reg)
+            setattr(addr, "current_vacant_registration", latest_reg)
     return addresses
+
+# Vacant property registration lifecycle (annual)
+@router.get(
+    "/addresses/{address_id}/vacant-registrations",
+    response_model=List[VacantRegistrationResponse],
+)
+def list_vacant_registrations(address_id: int, db: Session = Depends(get_db)):
+    address = db.query(Address).filter(Address.id == address_id).first()
+    if not address:
+        raise HTTPException(status_code=404, detail="Address not found")
+    registrations = (
+        db.query(VacantRegistration)
+        .filter(VacantRegistration.address_id == address_id)
+        .order_by(VacantRegistration.registration_year.desc(), VacantRegistration.created_at.desc())
+        .all()
+    )
+    for reg in registrations:
+        _sync_vacancy_status_for_registration(address, reg)
+    return registrations
+
+
+@router.post(
+    "/addresses/{address_id}/vacant-registrations",
+    response_model=VacantRegistrationResponse,
+)
+def create_vacant_registration(
+    address_id: int,
+    payload: VacantRegistrationCreate,
+    db: Session = Depends(get_db),
+):
+    address = db.query(Address).filter(Address.id == address_id).first()
+    if not address:
+        raise HTTPException(status_code=404, detail="Address not found")
+
+    data = _normalize_registration_payload(payload.dict(exclude_unset=True))
+    registration = VacantRegistration(address_id=address_id, **data)
+    db.add(registration)
+    _sync_vacancy_status_for_registration(address, registration)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="A registration for this year already exists for this address",
+        )
+    db.refresh(registration)
+    return registration
+
+
+@router.patch(
+    "/addresses/{address_id}/vacant-registrations/{registration_id}",
+    response_model=VacantRegistrationResponse,
+)
+def update_vacant_registration(
+    address_id: int,
+    registration_id: int,
+    payload: VacantRegistrationUpdate,
+    db: Session = Depends(get_db),
+):
+    registration = (
+        db.query(VacantRegistration)
+        .filter(VacantRegistration.id == registration_id, VacantRegistration.address_id == address_id)
+        .first()
+    )
+    if not registration:
+        raise HTTPException(status_code=404, detail="Registration not found")
+
+    data = _normalize_registration_payload(payload.dict(exclude_unset=True), existing=registration)
+    for key, value in data.items():
+        setattr(registration, key, value)
+
+    _sync_vacancy_status_for_registration(registration.address, registration)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="A registration for this year already exists for this address",
+        )
+    db.refresh(registration)
+    return registration
 
 # Get a single address by ID
 @router.get("/addresses/{address_id}", response_model=AddressResponse)
@@ -152,6 +351,17 @@ def get_address(address_id: int, db: Session = Depends(get_db)):
     address = db.query(Address).filter(Address.id == address_id).first()
     if not address:
         raise HTTPException(status_code=404, detail="Address not found")
+
+    registrations = (
+        db.query(VacantRegistration)
+        .filter(VacantRegistration.address_id == address_id)
+        .order_by(VacantRegistration.registration_year.desc(), VacantRegistration.created_at.desc())
+        .all()
+    )
+    for reg in registrations:
+        _sync_vacancy_status_for_registration(address, reg)
+    setattr(address, "vacant_registrations", registrations)
+    setattr(address, "current_vacant_registration", registrations[0] if registrations else None)
     return address
 
 
@@ -253,6 +463,8 @@ def create_address(address: AddressCreate, db: Session = Depends(get_db)):
     db.add(new_address)
     db.commit()
     db.refresh(new_address)
+    setattr(new_address, "vacant_registrations", [])
+    setattr(new_address, "current_vacant_registration", None)
     return new_address
 
 # Update an existing address
@@ -267,6 +479,8 @@ def update_address(address_id: int, address: AddressCreate, db: Session = Depend
     
     db.commit()
     db.refresh(existing_address)
+    setattr(existing_address, "vacant_registrations", [])
+    setattr(existing_address, "current_vacant_registration", None)
     return existing_address
 
 # Delete an address (clean up dependents first)

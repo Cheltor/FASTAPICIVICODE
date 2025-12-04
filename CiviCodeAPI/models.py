@@ -154,6 +154,7 @@ class Address(Base):
     businesses = relationship("Business", back_populates="address", cascade="all, delete-orphan") # Address has many Businesses
     address_contacts = relationship("AddressContact", back_populates="address", cascade="all, delete-orphan")
     contacts = relationship("Contact", secondary="address_contacts", back_populates="addresses", overlaps="address_contacts")
+    vacant_registrations = relationship("VacantRegistration", back_populates="address", cascade="all, delete-orphan")
 
 # AddressContacts
 class AddressContact(Base):
@@ -167,6 +168,36 @@ class AddressContact(Base):
 
     address = relationship("Address", back_populates="address_contacts", overlaps="contacts")
     contact = relationship("Contact", back_populates="address_associations", overlaps="addresses,contacts")
+
+
+# Vacant property registration records (annual)
+class VacantRegistration(Base):
+    __tablename__ = "vacant_registrations"
+
+    id = Column(BigInteger, primary_key=True, index=True)
+    address_id = Column(BigInteger, ForeignKey('addresses.id'), nullable=False, index=True)
+    registration_year = Column(Integer, nullable=False)
+    status = Column(String, nullable=False, default="pending")  # draft, pending, active, expired, waived
+    fee_amount = Column(Float, default=0.0)
+    fee_paid = Column(Boolean, default=False, nullable=False)
+    fee_paid_at = Column(DateTime)
+    fire_damage = Column(Boolean, default=False, nullable=False)
+    registered_on = Column(Date)
+    expires_on = Column(Date)
+    maintenance_status = Column(String)  # pending/compliant/non-compliant
+    maintenance_notes = Column(Text)
+    security_status = Column(String)  # pending/compliant/non-compliant
+    security_notes = Column(Text)
+    compliance_checked_at = Column(DateTime)
+    notes = Column(Text)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint('address_id', 'registration_year', name='uq_vacant_registrations_address_year'),
+    )
+
+    address = relationship("Address", back_populates="vacant_registrations")
 
 
 # Areas
