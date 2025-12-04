@@ -76,6 +76,7 @@ OpenAPI documentation is available at `/docs` (Swagger UI) and `/redoc` when the
 | `GOOGLE_API_KEY`, `RECAPTCHA_SECRET_KEY` | Optional integrations for geocoding or resident concern validation (present in `.env`, wire up as needed). |
 | `AZURE_*`, `GOOGLE_*`, `OPENAI_*`, `SENDGRID_*` | Loaded automatically via `dotenv` in `main.py`/`database.py`. |
 | `EMAIL_ENABLED`, `TEST_EMAIL_USER_ID` | Feature flag & per-env routing for notifications/test emails. |
+| `WEB_PUSH_VAPID_PUBLIC_KEY`, `WEB_PUSH_VAPID_PRIVATE_KEY`, `WEB_PUSH_VAPID_CONTACT` | Browser push credentials (VAPID) used by `pywebpush` + the React PWA to send desktop notifications. |
 
 > **Security:** Never commit `.env` files. Rotate the shared `SECRET_KEY` (currently hard-coded in several routers) when deploying to production—frontend JWTs must be updated to match.
 
@@ -85,7 +86,7 @@ OpenAPI documentation is available at `/docs` (Swagger UI) and `/redoc` when the
 
 - **Core records:** `Address`, `Unit`, `Contact`, `Business`, `Inspection`, `Violation`, `Citation`, `Permit`, `License`, `Complaint`, each with created/updated metadata and relationships used for eager loading.
 - **Comments & Attachments:** `Comment`, `ContactComment`, `ViolationComment`, `ActiveStorageAttachment`, `ActiveStorageBlob` capture per-entity notes + Azure blob metadata. `media_service.ensure_blob_browser_safe` normalizes HEIC/MOV uploads to JPEG/MP4.
-- **Notifications & Settings:** `Notification`, `AppSetting`, `AppSettingAudit`, and `ChatLog` track inbox updates, chat toggle history, and OpenAI transcripts.
+- **Notifications & Settings:** `Notification`, `PushSubscription`, `AppSetting`, `AppSettingAudit`, and `ChatLog` track inbox updates, registered browser endpoints, chat toggle history, and OpenAI transcripts.
 - **Aux tables:** `Observation`, `ObservationCode`, `UnitArea`, `Room`, etc., powering detailed inspection workflows.
 
 Use Alembic (`alembic revision --autogenerate -m "…"`) when adding or altering models.
@@ -101,6 +102,7 @@ Use Alembic (`alembic revision --autogenerate -m "…"`) when adding or altering
 | `routes/comments.py`, `routes/contacts.py`, `routes/users.py` | Comment threads with attachments, contact CRUD/deduplication, user authentication/profile updates. |
 | `routes/dashboard.py`, `routes/sir.py` | Aggregate metrics for the dashboard + SIR (complaint/inspection/violation) stats. |
 | `routes/notifications.py` | User inbox, read/unread endpoints, SendGrid fan-out, “test email” utility for admins. |
+| `routes/push_subscriptions.py` | Register/list/remove browser push endpoints (VAPID) tied to the authenticated user. |
 | `routes/assistant.py`, `routes/settings.py` | OpenAI assistant proxy, chat log export, chat-enabled toggle, and `/settings/stream` SSE feed. |
 | `routes/word_templates.py` | DOCX generation for violation notices, compliance letters, and FY26 license certificates using `docxtpl`. |
 
@@ -117,6 +119,8 @@ Authentication is enforced via OAuth2 password flow (`/login`). Routes that muta
 
 - `email_service.py` centralizes SendGrid usage with HTML templates for notifications and password resets.
 - `/notifications/test-email` replays the most recent notification to the current (or `TEST_EMAIL_USER_ID`) user—surfaced in the React dashboard.
+- `/push-subscriptions` lets the PWA register or revoke browser endpoints; `WEB_PUSH_VAPID_*` env vars must be present for delivery.
+- `/notifications/test-push` triggers a web push to the caller (requires at least one saved subscription).
 - `/settings/chat` toggles the in-app assistant for all users, persisting audits and notifying browsers via `settings_broadcast.Broadcaster` + `/settings/stream`.
 - `/chat` proxies messages to the configured OpenAI Assistant, persists `ChatLog` rows, and returns thread IDs so clients can continue conversations.
 

@@ -15,6 +15,7 @@ from .sir import router as sir_router
 from .notifications import router as notifications_router
 from .assistant import router as assistant_router
 from .settings import router as settings_router
+from .push_subscriptions import router as push_subscriptions_router
 # Import other route modules as needed
 
 # You can list all the routers here
@@ -36,5 +37,6 @@ __all__ = [
     "notifications_router",
     "assistant_router",
     "settings_router",
+    "push_subscriptions_router",
     # Add other routers here
 ]

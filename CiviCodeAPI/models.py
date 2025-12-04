@@ -558,6 +558,20 @@ class Notification(Base):
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)  # Auto-update updated_at timestamp
 
 
+class PushSubscription(Base):
+    __tablename__ = "push_subscriptions"
+
+    id = Column(BigInteger, primary_key=True, index=True)
+    user_id = Column(BigInteger, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    endpoint = Column(Text, nullable=False, unique=True)
+    p256dh = Column(String, nullable=False)
+    auth = Column(String, nullable=False)
+    expiration_time = Column(BigInteger, nullable=True)
+    user_agent = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+
+
 # Mentions (when a user is @-mentioned in a comment)
 class Mention(Base):
     __tablename__ = "mentions"

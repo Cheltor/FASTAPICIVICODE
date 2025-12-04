@@ -782,6 +782,39 @@ class NotificationResponse(NotificationBase):
         from_attributes = True
 
 
+class PushSubscriptionKeys(BaseModel):
+    p256dh: str
+    auth: str
+
+
+class PushSubscriptionBase(BaseModel):
+    endpoint: str
+    keys: PushSubscriptionKeys
+    expiration_time: Optional[int] = None
+    user_agent: Optional[str] = None
+
+
+class PushSubscriptionResponse(BaseModel):
+    id: int
+    user_id: int
+    endpoint: str
+    expiration_time: Optional[int] = None
+    user_agent: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class PushSubscriptionCreate(PushSubscriptionBase):
+    pass
+
+
+class PushSubscriptionDelete(BaseModel):
+    endpoint: str
+
+
 # Resolve forward references for any cross-referenced schemas (helps Pydantic resolve string annotations)
 try:
     ViolationResponse.update_forward_refs()

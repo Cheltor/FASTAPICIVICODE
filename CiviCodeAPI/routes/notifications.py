@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, HTTPException, Depends, status, Form
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -10,6 +12,7 @@ from email_service import send_notification_email
 from email_service import EMAIL_ENABLED, SENDGRID_API_KEY, SENDGRID_FROM_EMAIL
 from pydantic import BaseModel
 import os
+from push_service import can_send_push, send_push_for_notification, send_push_payload
 
 # Use the same auth settings as users
 SECRET_KEY = "trpdds2020"
@@ -24,6 +27,7 @@ def _get_current_user_id(token: str = Depends(oauth2_scheme)) -> int:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 def _decorate_origin(db: Session, notif: Notification) -> NotificationResponse:
     origin_type = None
@@ -124,6 +128,7 @@ def create_notification(payload: NotificationCreate, db: Session = Depends(get_d
     db.add(notif)
     db.commit()
     db.refresh(notif)
+    decorated = _decorate_origin(db, notif)
     # Email: send to recipient; allow override via TEST_EMAIL_USER_ID
     try:
         import os
@@ -136,7 +141,13 @@ def create_notification(payload: NotificationCreate, db: Session = Depends(get_d
     except Exception:
         # ignore email errors
         pass
-    return _decorate_origin(db, notif)
+
+    try:
+        send_push_for_notification(db, decorated)
+    except Exception:
+        logger.warning("Unable to send web push notification for id=%s", notif.id)
+
+    return decorated
 
 @router.get("/notifications/{notification_id}", response_model=NotificationResponse)
 def get_notification(notification_id: int, db: Session = Depends(get_db), current_user_id: int = Depends(_get_current_user_id)):
@@ -217,3 +228,32 @@ def send_test_email(payload: TestEmailRequest, db: Session = Depends(get_db), cu
             "from_email": SENDGRID_FROM_EMAIL,
         },
     }
+
+
+class TestPushRequest(BaseModel):
+    title: Optional[str] = "Test push notification"
+    body: Optional[str] = "This is a test push notification from CodeSoft."
+    url: Optional[str] = "/notifications"
+
+
+@router.post("/notifications/test-push")
+def send_test_push_notification(
+    payload: TestPushRequest,
+    db: Session = Depends(get_db),
+    current_user_id: int = Depends(_get_current_user_id),
+):
+    if not can_send_push():
+        raise HTTPException(status_code=400, detail="Web push is not configured for this environment.")
+
+    push_payload = {
+        "title": payload.title or "Test push notification",
+        "body": payload.body or "This is a test push notification from CodeSoft.",
+        "data": {
+            "url": payload.url or "/notifications",
+        },
+    }
+
+    sent = send_push_payload(db, current_user_id, push_payload)
+    if not sent:
+        raise HTTPException(status_code=404, detail="No push subscriptions registered for this user.")
+    return {"ok": True, "sent": True}
