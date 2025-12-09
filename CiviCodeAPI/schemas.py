@@ -286,6 +286,8 @@ class ViolationResponse(ViolationBase):
     violation_comments: Optional[List['ViolationCommentResponse']] = None
     user: Optional[UserResponse] = None  # <-- Add this line
     unit: Optional['UnitResponse'] = None
+    ownername: Optional[str] = None
+    outstanding_fines_total: Optional[float] = None
 
     class Config:
         from_attributes = True

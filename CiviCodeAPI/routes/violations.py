@@ -149,6 +149,28 @@ STATUS_STRING_TO_INT = {
 }
 
 
+def _coerce_status(value) -> Optional[int]:
+    try:
+        return None if value is None else int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _compute_outstanding_fines(citations) -> float:
+    total = 0.0
+    if not citations:
+        return 0.0
+    for citation in citations:
+        fine_value = getattr(citation, "fine", 0) or 0
+        status_value = _coerce_status(getattr(citation, "status", None))
+        if fine_value and status_value not in (1, 3):
+            try:
+                total += float(fine_value)
+            except (TypeError, ValueError):
+                continue
+    return float(total)
+
+
 def _merge_capture_metadata(exif_meta: dict, client_capture_raw: Optional[str]) -> dict:
     merged = dict(exif_meta or {})
     if client_capture_raw:
@@ -217,6 +239,7 @@ def get_violations(
         joinedload(Violation.address),
         joinedload(Violation.codes),
         joinedload(Violation.user),  # Eagerly load User relationship
+        joinedload(Violation.citations),
     ).order_by(desc(Violation.created_at))
 
     if skip:
@@ -235,6 +258,8 @@ def get_violations(
         violation_dict['deadline_date'] = violation.deadline_date
         violation_dict['codes'] = violation.codes
         violation_dict['user'] = schemas.UserResponse.from_orm(violation.user) if getattr(violation, 'user', None) else None
+        violation_dict['ownername'] = violation.address.ownername if violation.address else None
+        violation_dict['outstanding_fines_total'] = _compute_outstanding_fines(getattr(violation, 'citations', None))
         response.append(violation_dict)
     return response
 
@@ -311,7 +336,8 @@ def get_violation(violation_id: int, db: Session = Depends(get_db)):
         .options(
             joinedload(Violation.address),
             joinedload(Violation.codes),
-            joinedload(Violation.user)  # Eagerly load the user relationship
+            joinedload(Violation.user),  # Eagerly load the user relationship
+            joinedload(Violation.citations),
         )
         .first()
     )
@@ -335,6 +361,8 @@ def get_violation(violation_id: int, db: Session = Depends(get_db)):
         }
         for vc in violation.violation_comments
     ] if hasattr(violation, 'violation_comments') else []
+    violation_dict['ownername'] = violation.address.ownername if violation.address else None
+    violation_dict['outstanding_fines_total'] = _compute_outstanding_fines(getattr(violation, 'citations', None))
     return violation_dict
 
     print("violation.user:", violation.user)
