@@ -827,3 +827,22 @@ try:
 except Exception:
     # If any models are not yet defined at import time, it's okay — Pydantic will resolve when used.
     pass
+
+class TimelineItem(BaseModel):
+    id: int
+    type: str  # 'comment', 'inspection', 'violation', 'citation', 'license', 'permit'
+    description: str
+    created_at: datetime
+    user: Optional[UserResponse] = None
+    address_id: Optional[int] = None
+    combadd: Optional[str] = None
+    entity_id: int
+    entity_link: Optional[str] = None  # Frontend route
+    metadata: Optional[dict] = None  # Extra info like status, amount, etc.
+
+    class Config:
+        from_attributes = True
+
+class TimelineResponse(BaseModel):
+    items: List[TimelineItem]
+    next_cursor: Optional[datetime] = None

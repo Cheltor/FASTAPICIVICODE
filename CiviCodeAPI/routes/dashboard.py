@@ -1,7 +1,7 @@
 ﻿from fastapi import APIRouter, HTTPException, Depends, Query
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, or_
-from typing import List, Dict
+from typing import List, Dict, Optional
 from datetime import datetime, date
 from models import (
     Violation,
@@ -29,6 +29,8 @@ from schemas import (
     PermitResponse,
     RecentActivityResponse,
     OasDashboardResponse,
+    TimelineItem,
+    TimelineResponse,
 )
 from database import get_db
 from utils import get_this_workweek, get_last_workweek
@@ -542,17 +544,132 @@ def get_reporting_metrics(db: Session = Depends(get_db)):
     avg_time_to_close = round(total_close_days / closed_count, 1) if closed_count > 0 else 0
 
     return {
-        "aging": {
-            "buckets": aging_buckets,
-            "average_age": avg_age,
-            "total_open": count
-        },
-        "compliance": {
-            "counts": compliance_counts,
-            "total_licenses": len(licenses)
-        },
-        "closure": {
-            "average_time_to_close": avg_time_to_close,
-            "total_closed_with_data": closed_count
-        }
+        "case_aging_buckets": aging_buckets,
+        "average_case_age_days": avg_age,
+        "open_violation_count": count,
+        "rental_license_compliance": compliance_counts,
+        "total_license_count": len(licenses),
+        "average_time_to_close_days": avg_time_to_close,
+        "closed_violation_count": closed_count,
     }
+
+
+@router.get("/dash/timeline", response_model=TimelineResponse)
+def get_timeline(
+    limit: int = Query(20, ge=1, le=100),
+    cursor: Optional[datetime] = Query(None),
+    db: Session = Depends(get_db)
+):
+    # If no cursor, use current time
+    if not cursor:
+        cursor = datetime.utcnow()
+
+    # Helper to apply cursor and limit
+    def apply_pagination(query, model_class):
+        return (
+            query.filter(model_class.created_at < cursor)
+            .order_by(model_class.created_at.desc())
+            .limit(limit)
+        )
+
+    # 1. Comments
+    comments = apply_pagination(
+        db.query(Comment).options(joinedload(Comment.user), joinedload(Comment.address)),
+        Comment
+    ).all()
+
+    # 2. Inspections (excluding complaints for now, or include them?)
+    # Let's include all inspections
+    inspections = apply_pagination(
+        db.query(Inspection).options(joinedload(Inspection.inspector), joinedload(Inspection.address)),
+        Inspection
+    ).all()
+
+    # 3. Violations
+    violations = apply_pagination(
+        db.query(Violation).options(joinedload(Violation.user), joinedload(Violation.address)),
+        Violation
+    ).all()
+
+    # 4. Citations
+    citations = apply_pagination(
+        db.query(Citation).options(joinedload(Citation.user), joinedload(Citation.violation).joinedload(Violation.address)),
+        Citation
+    ).all()
+
+    # 5. Licenses
+    licenses = apply_pagination(
+        db.query(License).options(joinedload(License.inspection).joinedload(Inspection.address)),
+        License
+    ).all()
+
+    # 6. Permits
+    permits = apply_pagination(
+        db.query(Permit).options(joinedload(Permit.inspection).joinedload(Inspection.address)),
+        Permit
+    ).all()
+
+    # Combine and sort
+    all_items = []
+
+    # Helper to create TimelineItem
+    def create_item(type_name, obj, description, created_at, user=None, address=None, entity_link=None, metadata=None):
+        return TimelineItem(
+            id=obj.id,
+            type=type_name,
+            description=description,
+            created_at=created_at,
+            user=user,
+            address_id=address.id if address else None,
+            combadd=address.combadd if address else None,
+            entity_id=obj.id,
+            entity_link=entity_link,
+            metadata=metadata
+        )
+
+    for c in comments:
+        desc = f"commented on {c.address.combadd if c.address else 'an address'}"
+        all_items.append(create_item('comment', c, desc, c.created_at, c.user, c.address, f"/admin/comments/{c.id}/edit"))
+
+    for i in inspections:
+        user = i.inspector
+        desc = f"performed {i.source} inspection"
+        all_items.append(create_item('inspection', i, desc, i.created_at, user, i.address, f"/inspection/{i.id}", {"status": i.status}))
+
+    for v in violations:
+        desc = f"recorded a violation: {v.violation_type or 'Unknown'}"
+        all_items.append(create_item('violation', v, desc, v.created_at, v.user, v.address, f"/violation/{v.id}", {"status": v.status}))
+
+    for c in citations:
+        # Citations might not have a direct user relationship in the model def above, let's check
+        # The model has user_id and user relationship.
+        desc = f"issued a citation (${c.fine})"
+        address = c.violation.address if c.violation else None
+        all_items.append(create_item('citation', c, desc, c.created_at, c.user, address, f"/citation/{c.id}", {"fine": c.fine}))
+
+    for l in licenses:
+        # Licenses don't have a direct 'user' who created them usually, it's system or via inspection
+        # We might skip user for licenses or use the inspector
+        user = l.inspection.inspector if l.inspection else None
+        address = l.inspection.address if l.inspection else None
+        desc = f"issued license #{l.license_number}"
+        all_items.append(create_item('license', l, desc, l.created_at, user, address, f"/license/{l.id}", {"type": l.license_type}))
+
+    for p in permits:
+        user = p.inspection.inspector if p.inspection else None
+        address = p.inspection.address if p.inspection else None
+        desc = f"issued permit #{p.permit_number}"
+        all_items.append(create_item('permit', p, desc, p.created_at, user, address, f"/permit/{p.id}", {"type": p.permit_type}))
+
+    # Sort descending
+    all_items.sort(key=lambda x: x.created_at, reverse=True)
+
+    # Take top 'limit'
+    final_items = all_items[:limit]
+
+    # Determine next cursor
+    next_cursor = None
+    if final_items:
+        next_cursor = final_items[-1].created_at
+
+    return TimelineResponse(items=final_items, next_cursor=next_cursor)
