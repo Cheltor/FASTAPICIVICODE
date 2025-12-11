@@ -14,7 +14,7 @@ else:
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
-from routes import addresses_router, users_router, businesses_router, contacts_router, violations_router, comments_router, citations_router, inspections_router, codes_router, codes_sync_mvp_router, licenses_router, dashboard_router, permits_router, sir_router, notifications_router, assistant_router, settings_router, push_subscriptions_router, word_templates, templates  # Updated import
+from routes import addresses_router, users_router, businesses_router, contacts_router, violations_router, comments_router, citations_router, inspections_router, codes_router, codes_sync_mvp_router, licenses_router, dashboard_router, permits_router, sir_router, notifications_router, assistant_router, settings_router, push_subscriptions_router, word_templates, templates, map # Updated import
 from database import engine, Base
 import uvicorn
 
@@ -92,6 +92,9 @@ app.include_router(settings_router)
 
 # Include template routes
 app.include_router(templates.router)
+
+# Include map routes
+app.include_router(map.router)
 
 # CORS middleware
 app.add_middleware(

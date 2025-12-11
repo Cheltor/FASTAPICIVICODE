@@ -556,6 +556,25 @@ def update_vacancy_status(address_id: int, data: dict = Body(...), db: Session =
     db.refresh(address)
     return address
 
+@router.patch("/addresses/{address_id}/location")
+def update_address_location(
+    address_id: int,
+    location: dict = Body(..., example={"latitude": 38.0, "longitude": -77.0}),
+    db: Session = Depends(get_db)
+):
+    address = db.query(Address).filter(Address.id == address_id).first()
+    if not address:
+        raise HTTPException(status_code=404, detail="Address not found")
+    
+    if "latitude" in location:
+        address.latitude = float(location["latitude"])
+    if "longitude" in location:
+        address.longitude = float(location["longitude"])
+        
+    db.commit()
+    db.refresh(address)
+    return {"message": "Location updated", "latitude": address.latitude, "longitude": address.longitude}
+
 # Show the comments for the address
 @router.get("/addresses/{address_id}/comments", response_model=List[CommentResponse])
 def get_address_comments(address_id: int, db: Session = Depends(get_db)):
